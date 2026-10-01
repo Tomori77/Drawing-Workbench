@@ -23,6 +23,7 @@ APP_ENV = "development"
 binding = "DB"
 database_name = "drawing-workbench"
 database_id = "eb34b8d5-b09b-42c7-9255-3fb3aa27ff26"
+migrations_dir = "migrations"
 
 # R2：生成的图片对象。
 [[r2_buckets]]

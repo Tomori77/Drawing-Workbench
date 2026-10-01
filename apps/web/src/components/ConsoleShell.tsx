@@ -13,7 +13,8 @@ import {
   IconLog,
   IconLogo,
   IconSearch,
-  IconUser
+  IconUser,
+  IconWallet
 } from "./icons";
 
 interface NavItem {
@@ -43,6 +44,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "账户",
     ownerOnly: true,
     items: [
+      { to: "/console/accounts", label: "账号池", icon: <IconWallet className="size-4.5" /> },
       { to: "/console/api-keys", label: "API 密钥", icon: <IconKey className="size-4.5" /> },
       { to: "/console/logs", label: "生成日志", icon: <IconLog className="size-4.5" /> },
       { to: "/console/profile", label: "个人资料", icon: <IconUser className="size-4.5" /> }
@@ -54,6 +56,7 @@ const CRUMB_LABELS: Record<string, string> = {
   "/console": "概览",
   "/console/playground": "创作台",
   "/console/history": "本地历史",
+  "/console/accounts": "账号池",
   "/console/api-keys": "API 密钥",
   "/console/logs": "生成日志",
   "/console/profile": "个人资料",
@@ -194,7 +197,7 @@ export default function ConsoleShell({ children }: { children: ReactNode }) {
 
           <div className="ml-auto flex shrink-0 items-center gap-3">
             <span className="hidden h-8 items-center gap-1.5 rounded-full border border-(--color-border) bg-(--color-surface-1)/80 px-3 text-xs text-(--color-muted) sm:inline-flex">
-              <span className="font-medium text-(--color-text)">537</span>
+              <span className="font-medium text-(--color-text)">—</span>
               <span>Gems</span>
             </span>
             <span className="hidden items-center gap-2 sm:flex">

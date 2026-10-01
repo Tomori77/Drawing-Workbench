@@ -1,10 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
 import * as Slider from "@radix-ui/react-slider";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import ConsoleShell from "../components/ConsoleShell";
+import Lightbox from "../components/Lightbox";
 import { IconPlus, IconSpark } from "../components/icons";
+import { useGenerate } from "../hooks/useGenerate";
+import { useGallery } from "../hooks/useGallery";
+import type { GenerateImage, GenerateParams } from "../lib/api";
 import {
   actionTabs,
   canvasSizes,
@@ -87,29 +91,71 @@ type PromptTab = "positive" | "negative";
 export default function Playground() {
   const [model, setModel] = useState(modelOptions[0].value);
   const [action, setAction] = useState(actionTabs[0].value);
-  const [size, setSize] = useState(canvasSizes[0].ratio);
-  const [sampler, setSampler] = useState(samplerOptions[0]);
-  const [schedule, setSchedule] = useState(noiseScheduleOptions[0]);
+  const [sizeIndex, setSizeIndex] = useState(0);
+  const [sampler, setSampler] = useState(samplerOptions[0].value);
+  const [schedule, setSchedule] = useState(noiseScheduleOptions[0].value);
   const [steps, setSteps] = useState(28);
   const [guidance, setGuidance] = useState(5);
   const [seed, setSeed] = useState("");
   const [prompt, setPrompt] = useState("");
   const [negative, setNegative] = useState("");
   const [promptTab, setPromptTab] = useState<PromptTab>("positive");
+  const [sessionImages, setSessionImages] = useState<GenerateImage[]>([]);
+  const [lightbox, setLightbox] = useState<GenerateImage | null>(null);
+
+  const canvas = canvasSizes[sizeIndex];
+  const generateMutation = useGenerate();
+  const galleryQuery = useGallery();
+  const historyItems = useMemo(
+    () => (galleryQuery.data?.pages ?? []).flatMap((page) => page.items).slice(0, 24),
+    [galleryQuery.data]
+  );
 
   const positiveTokens = Math.ceil(prompt.length / 4);
   const negativeTokens = Math.ceil(negative.length / 4);
+
+  const submit = () => {
+    if (generateMutation.isPending) return;
+    const body: GenerateParams = {
+      model,
+      prompt,
+      negative_prompt: negative,
+      action,
+      n: 1,
+      size: `${canvas.width}x${canvas.height}`,
+      parameters: {
+        width: canvas.width,
+        height: canvas.height,
+        steps,
+        scale: guidance,
+        seed: Number.parseInt(seed, 10) || 0,
+        sampler,
+        noise_schedule: schedule
+      }
+    };
+    generateMutation.mutate(body, {
+      onSuccess: (result) => {
+        setSessionImages((prev) => [...result.images, ...prev].slice(0, 24));
+      }
+    });
+  };
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
         e.preventDefault();
-        /* 生图后端尚未接入，占位不发起请求 */
+        submit();
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  });
+
+  const errorMessage = generateMutation.error
+    ? generateMutation.error.message
+    : null;
+
+  const displayImages = sessionImages.length > 0 ? sessionImages : generateMutation.data?.images ?? [];
 
   return (
     <ConsoleShell>
@@ -132,7 +178,7 @@ export default function Playground() {
                 <SelectMenu ariaLabel="模型" value={model} options={modelOptions} onChange={setModel} />
               </Field>
               <Tabs.Root value={action} onValueChange={setAction}>
-                <Tabs.List className="grid grid-cols-2 gap-1 rounded-(--radius-input) bg-(--color-surface-2) p-1">
+                <Tabs.List className="grid grid-cols-3 gap-1 rounded-(--radius-input) bg-(--color-surface-2) p-1">
                   {actionTabs.map((tab) => (
                     <Tabs.Trigger
                       key={tab.value}
@@ -146,16 +192,16 @@ export default function Playground() {
               </Tabs.Root>
             </PanelSection>
 
-            <PanelSection title="画布" meta={size}>
+            <PanelSection title="画布" meta={canvas.ratio}>
               <div className="grid grid-cols-2 gap-2">
-                {canvasSizes.map((option) => {
-                  const active = option.ratio === size;
+                {canvasSizes.map((option, index) => {
+                  const active = index === sizeIndex;
                   return (
                     <button
                       key={option.ratio}
                       type="button"
                       aria-pressed={active}
-                      onClick={() => setSize(option.ratio)}
+                      onClick={() => setSizeIndex(index)}
                       className={`flex h-12 flex-col items-center justify-center rounded-(--radius-input) border text-xs transition-colors ${
                         active
                           ? "border-(--color-text) bg-(--color-surface-2) font-medium"
@@ -175,7 +221,7 @@ export default function Playground() {
                 <SelectMenu
                   ariaLabel="采样器"
                   value={sampler}
-                  options={samplerOptions.map((s) => ({ value: s, label: s }))}
+                  options={samplerOptions}
                   onChange={setSampler}
                 />
               </Field>
@@ -183,7 +229,7 @@ export default function Playground() {
                 <SelectMenu
                   ariaLabel="噪声调度"
                   value={schedule}
-                  options={noiseScheduleOptions.map((s) => ({ value: s, label: s }))}
+                  options={noiseScheduleOptions}
                   onChange={setSchedule}
                 />
               </Field>
@@ -241,13 +287,49 @@ export default function Playground() {
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <section className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-6">
-            <div className="flex flex-col items-center text-center">
-              <span className="mb-4 flex size-16 items-center justify-center rounded-full border border-(--color-border) bg-(--color-surface-1) text-(--color-muted-2) shadow-(--shadow-card)">
-                <IconSpark className="size-7" />
-              </span>
-              <p className="text-base font-medium">你的作品将显示在这里</p>
-              <p className="mt-1 text-sm text-(--color-muted)">描述画面，选择模型，然后点击生成。</p>
-            </div>
+            {generateMutation.isPending ? (
+              <div className="flex flex-col items-center text-center">
+                <span className="mb-4 flex size-16 animate-pulse items-center justify-center rounded-full border border-(--color-border) bg-(--color-surface-1) text-(--color-primary) shadow-(--shadow-card)">
+                  <IconSpark className="size-7" />
+                </span>
+                <p className="text-base font-medium">正在生成…</p>
+                <p className="mt-1 text-sm text-(--color-muted)">请稍候，完成后会显示在下方。</p>
+              </div>
+            ) : errorMessage ? (
+              <div className="max-w-md rounded-(--radius-card) border border-(--color-warning)/40 bg-(--color-surface-1) p-6 text-center shadow-(--shadow-card)">
+                <p className="text-sm font-medium text-(--color-warning)">生成失败</p>
+                <p className="mt-2 text-sm text-(--color-muted)">{errorMessage}</p>
+              </div>
+            ) : displayImages.length > 0 ? (
+              <div
+                className={`grid w-full max-w-3xl gap-3 ${
+                  displayImages.length > 1 ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-1"
+                }`}
+              >
+                {displayImages.map((image) => (
+                  <button
+                    key={image.id}
+                    type="button"
+                    onClick={() => setLightbox(image)}
+                    className="overflow-hidden rounded-(--radius-secondary) border border-(--color-border) bg-(--color-surface-1) shadow-(--shadow-card) transition-transform hover:-translate-y-0.5"
+                  >
+                    <img
+                      src={image.url}
+                      alt="生成结果"
+                      className="max-h-[60dvh] w-full object-contain"
+                    />
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center text-center">
+                <span className="mb-4 flex size-16 items-center justify-center rounded-full border border-(--color-border) bg-(--color-surface-1) text-(--color-muted-2) shadow-(--shadow-card)">
+                  <IconSpark className="size-7" />
+                </span>
+                <p className="text-base font-medium">你的作品将显示在这里</p>
+                <p className="mt-1 text-sm text-(--color-muted)">描述画面，选择模型，然后点击生成。</p>
+              </div>
+            )}
           </section>
 
           <section className="mx-2 mb-2 flex flex-col rounded-2xl border border-(--color-border) bg-(--color-surface-1) shadow-(--shadow-float)">
@@ -296,17 +378,19 @@ export default function Playground() {
               <div className="min-w-0">
                 <p className="flex items-center gap-1.5 text-xs text-(--color-muted)">
                   <IconSpark className="size-3 text-(--color-success)" />
-                  <span className="truncate">0 Gems · 先用免费额度，再用图片权益（剩余 0 张）</span>
+                  <span className="truncate">费用 — Gems · 单次请求 × 1</span>
                 </p>
                 <p className="mt-1 text-[11px] text-(--color-muted-2)">
-                  {prompt.length + negative.length} 字符 · 单次请求 × 1
+                  {prompt.length + negative.length} 字符 · {canvas.ratio}
                 </p>
               </div>
               <button
                 type="button"
-                className="flex h-10 shrink-0 items-center gap-2 rounded-full bg-(--color-primary) px-6 text-sm font-medium text-white shadow-(--shadow-card) transition-opacity hover:opacity-90"
+                onClick={submit}
+                disabled={generateMutation.isPending}
+                className="flex h-10 shrink-0 items-center gap-2 rounded-full bg-(--color-primary) px-6 text-sm font-medium text-white shadow-(--shadow-card) transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <span>生成</span>
+                <span>{generateMutation.isPending ? "生成中…" : "生成"}</span>
                 <kbd className="rounded border border-white/30 bg-white/15 px-1 font-mono text-[10px]">
                   Ctrl
                 </kbd>
@@ -315,19 +399,63 @@ export default function Playground() {
                 </kbd>
               </button>
             </div>
+            {errorMessage && (
+              <p className="border-t border-(--color-border) px-4 py-2 text-xs text-(--color-warning)">
+                {errorMessage}
+              </p>
+            )}
           </section>
         </div>
 
         <aside className="hidden w-64 shrink-0 flex-col border-l border-(--color-border) bg-(--color-surface-1) xl:flex">
           <div className="flex h-12 items-center gap-2 border-b border-(--color-border) px-4">
             <span className="text-sm font-semibold">历史</span>
-            <span className="text-xs text-(--color-muted-2)">0</span>
+            <span className="text-xs text-(--color-muted-2)">
+              {sessionImages.length > 0 ? sessionImages.length : historyItems.length}
+            </span>
           </div>
-          <div className="flex flex-1 items-center justify-center p-6">
-            <p className="text-center text-sm text-(--color-muted)">还没有生成历史</p>
-          </div>
+          {historyItems.length === 0 && sessionImages.length === 0 ? (
+            <div className="flex flex-1 items-center justify-center p-6">
+              <p className="text-center text-sm text-(--color-muted)">还没有生成历史</p>
+            </div>
+          ) : sessionImages.length > 0 ? (
+            <div className="grid flex-1 auto-rows-min grid-cols-2 gap-2 overflow-y-auto p-3">
+              {sessionImages.map((image) => (
+                <button
+                  key={image.id}
+                  type="button"
+                  onClick={() => setLightbox(image)}
+                  className="overflow-hidden rounded-(--radius-input) border border-(--color-border) bg-(--color-surface-2)"
+                >
+                  <img src={image.url} alt="本次生成" className="aspect-square w-full object-cover" />
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="grid flex-1 auto-rows-min grid-cols-2 gap-2 overflow-y-auto p-3">
+              {historyItems.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setLightbox({ id: item.id, url: item.url, thumb_url: item.thumb_url ?? undefined })}
+                  className="overflow-hidden rounded-(--radius-input) border border-(--color-border) bg-(--color-surface-2)"
+                >
+                  <img src={item.thumb_url ?? item.url} alt="历史作品" loading="lazy" className="aspect-square w-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
         </aside>
       </div>
+
+      <Lightbox
+        open={lightbox !== null}
+        onOpenChange={(open) => {
+          if (!open) setLightbox(null);
+        }}
+        src={lightbox?.url ?? null}
+        alt="生成结果"
+      />
     </ConsoleShell>
   );
 }

@@ -4,6 +4,7 @@ import Login from "./routes/Login";
 import Home from "./routes/Home";
 import Playground from "./routes/Playground";
 import Gallery from "./routes/Gallery";
+import Accounts from "./routes/Accounts";
 import Placeholder from "./routes/Placeholder";
 import ProtectedRoute from "./routes/ProtectedRoute";
 
@@ -48,6 +49,14 @@ export default function App() {
         element={
           <Protected>
             <Placeholder title="API 密钥" description="为开放 API 创建与管理访问密钥。" />
+          </Protected>
+        }
+      />
+      <Route
+        path="/console/accounts"
+        element={
+          <Protected>
+            <Accounts />
           </Protected>
         }
       />

@@ -1,7 +1,9 @@
 import { Link } from "react-router-dom";
 import ConsoleShell from "../components/ConsoleShell";
 import { useAuth } from "../hooks/useAuth";
-import { accountStats, quickActions } from "../lib/mock";
+import { useAccounts } from "../hooks/useAccounts";
+import { useGallery } from "../hooks/useGallery";
+import { quickActions } from "../lib/mock";
 import {
   IconArrowUpRight,
   IconGallery,
@@ -20,6 +22,29 @@ function actionIcon(icon: string) {
 
 export default function Home() {
   const { data: auth } = useAuth();
+  const isOwner = auth?.role === "owner";
+  const accountsQuery = useAccounts(undefined, isOwner);
+  const galleryQuery = useGallery(1);
+  const total = galleryQuery.data?.pages[0]?.total;
+  const poolGems = accountsQuery.data?.total_gems;
+  const stats = [
+    {
+      label: "Gems 余额",
+      value: isOwner && poolGems !== undefined ? String(poolGems) : "—",
+      unit: "Gems",
+      hint:
+        isOwner && poolGems !== undefined
+          ? "账号池中全部账号的余额合计"
+          : "仅所有者可见"
+    },
+    { label: "图包次数", value: "—", hint: "免费额度与图包权益接口尚未接入" },
+    { label: "已消耗 Gems", value: "—", unit: "Gems", hint: "账户池用量接口尚未接入" },
+    {
+      label: "作品数",
+      value: total === undefined ? "—" : String(total),
+      hint: "画廊中已保存的作品总数"
+    }
+  ];
 
   return (
     <ConsoleShell>
@@ -41,7 +66,7 @@ export default function Home() {
         </header>
 
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {accountStats.map((stat) => (
+          {stats.map((stat) => (
             <div
               key={stat.label}
               className="rounded-(--radius-card) border border-(--color-border) bg-(--color-surface-1) p-5 shadow-(--shadow-card)"
