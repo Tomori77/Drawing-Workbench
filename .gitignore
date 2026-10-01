@@ -1,0 +1,5 @@
+# 不上传的内容统一放在 docs 目录
+docs/
+
+# 项目手册不上传
+PROJECT_HANDBOOK.md
