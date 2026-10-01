@@ -1,5 +1,8 @@
-# 不上传的内容统一放在 docs 目录
-docs/
+# 不上传的内容统一放在 docs 目录（参考项目、参考报告、临时资料）
+docs/*
+# 例外：项目文档入库
+!docs/docs/
+!docs/docs/**
 
 # 项目手册不上传
 PROJECT_HANDBOOK.md
