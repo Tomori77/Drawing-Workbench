@@ -1,30 +1,84 @@
 import { Routes, Route, Navigate } from "react-router-dom";
+import type { ReactNode } from "react";
 import Login from "./routes/Login";
 import Home from "./routes/Home";
 import Playground from "./routes/Playground";
+import Gallery from "./routes/Gallery";
+import Placeholder from "./routes/Placeholder";
 import ProtectedRoute from "./routes/ProtectedRoute";
+
+function Protected({ children }: { children: ReactNode }) {
+  return <ProtectedRoute>{children}</ProtectedRoute>;
+}
 
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+
       <Route
-        path="/"
+        path="/console"
         element={
-          <ProtectedRoute>
+          <Protected>
             <Home />
-          </ProtectedRoute>
+          </Protected>
         }
       />
       <Route
         path="/console/playground"
         element={
-          <ProtectedRoute>
+          <Protected>
             <Playground />
-          </ProtectedRoute>
+          </Protected>
         }
       />
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route
+        path="/console/history"
+        element={
+          <Protected>
+            <Placeholder
+              title="本地历史"
+              description="保存在本浏览器中的近期作品（最多 60 条）。"
+            />
+          </Protected>
+        }
+      />
+      <Route
+        path="/console/api-keys"
+        element={
+          <Protected>
+            <Placeholder title="API 密钥" description="为开放 API 创建与管理访问密钥。" />
+          </Protected>
+        }
+      />
+      <Route
+        path="/console/logs"
+        element={
+          <Protected>
+            <Placeholder title="生成日志" description="查看工作台与开放 API 的生成请求记录。" />
+          </Protected>
+        }
+      />
+      <Route
+        path="/console/profile"
+        element={
+          <Protected>
+            <Placeholder title="个人资料" description="管理账户身份与偏好设置。" />
+          </Protected>
+        }
+      />
+
+      <Route
+        path="/gallery"
+        element={
+          <Protected>
+            <Gallery />
+          </Protected>
+        }
+      />
+
+      <Route path="/" element={<Navigate to="/console" replace />} />
+      <Route path="*" element={<Navigate to="/console" replace />} />
     </Routes>
   );
 }
