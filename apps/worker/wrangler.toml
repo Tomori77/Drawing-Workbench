@@ -1,0 +1,29 @@
+name = "drawing-workbench"
+main = "src/index.ts"
+compatibility_date = "2025-06-01"
+compatibility_flags = ["nodejs_compat"]
+
+# 部署前自动构建前端。命令在 apps/worker 目录下执行；pnpm 会向上查找
+# pnpm-workspace.yaml，因此 --filter 能正确定位到 web 包。
+[build]
+command = "pnpm --filter @drawing-workbench/web build"
+
+# 静态资源：指向 web 构建产物（由上面的 [build] 自动生成）。
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+
+# 非敏感变量占位；敏感值（OWNER_PASSWORD / FRIEND_PASSWORD / SESSION_SECRET）
+# 通过 `wrangler secret put` 写入，不写进本文件。
+[vars]
+APP_ENV = "development"
+
+# D1 / R2 绑定占位：创建资源并取消注释后启用，避免未创建时构建失败。
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "drawing-workbench"
+# database_id = "REPLACE_WITH_DATABASE_ID"
+
+# [[r2_buckets]]
+# binding = "BUCKET"
+# bucket_name = "drawing-workbench"

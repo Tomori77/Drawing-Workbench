@@ -1,0 +1,17 @@
+{
+  "name": "drawing-workbench",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@10.16.1",
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "deploy": "pnpm -r build && pnpm --filter @drawing-workbench/worker exec wrangler deploy",
+    "deploy:dry": "pnpm -r build && pnpm --filter @drawing-workbench/worker exec wrangler deploy --dry-run"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "wrangler": "^4.0.0"
+  }
+}

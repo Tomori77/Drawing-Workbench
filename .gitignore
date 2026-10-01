@@ -3,3 +3,10 @@ docs/
 
 # 项目手册不上传
 PROJECT_HANDBOOK.md
+
+# 依赖与构建产物
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+*.log
