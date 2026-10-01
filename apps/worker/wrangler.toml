@@ -18,12 +18,13 @@ binding = "ASSETS"
 [vars]
 APP_ENV = "development"
 
-# D1 / R2 绑定占位：创建资源并取消注释后启用，避免未创建时构建失败。
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "drawing-workbench"
-# database_id = "REPLACE_WITH_DATABASE_ID"
+# D1：会话元数据、上游配置、API Key、配额与生成记录。
+[[d1_databases]]
+binding = "DB"
+database_name = "drawing-workbench"
+database_id = "eb34b8d5-b09b-42c7-9255-3fb3aa27ff26"
 
-# [[r2_buckets]]
-# binding = "BUCKET"
-# bucket_name = "drawing-workbench"
+# R2：生成的图片对象。
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "drawing-workbench"
