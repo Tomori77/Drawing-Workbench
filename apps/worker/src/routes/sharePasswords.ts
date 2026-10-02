@@ -7,6 +7,7 @@ import {
   type SharePasswordPatch
 } from "../db/sharePasswords";
 import { readJson } from "../lib/json";
+import { ensureBuiltinArtists } from "../db/presets";
 import { requireOrigin, requireOwner } from "./guard";
 import type { AppEnv } from "../types";
 
@@ -33,6 +34,8 @@ async function assetStats(env: AppEnv["Bindings"]): Promise<Map<string, { used_b
 
 sharePasswords.get("/", async (c) => {
   const [items, stats] = await Promise.all([listSharePasswords(c.env), assetStats(c.env)]);
+  // 为尚未种过内置画师串的分享密码补齐一份（幂等）。
+  await Promise.all(items.map((item) => ensureBuiltinArtists(c.env, item.id)));
   return c.json({
     items: items.map((item) => {
       const stat = stats.get(item.id);
@@ -62,6 +65,8 @@ sharePasswords.post("/", requireOrigin, async (c) => {
     return c.json({ error: "invalid_quota", message: "配额必须为非负数字" }, 400);
   }
   const created = await createSharePassword(c.env, { label, password, quota_bytes: quota });
+  // 新分享密码立即获得一份内置画师串。
+  await ensureBuiltinArtists(c.env, created.id);
   return c.json(created, 201);
 });
 

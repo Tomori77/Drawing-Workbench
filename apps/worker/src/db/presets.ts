@@ -2,6 +2,7 @@ import type { Env } from "../types";
 import { newId } from "../lib/ids";
 import { nowIso } from "../lib/time";
 import { parseJson } from "../lib/json";
+import { getKv, setKv } from "../pool/kv";
 import { BUILTIN_ARTISTS } from "../presets/builtinArtists";
 
 export type PresetKind = "recipe" | "artist";
@@ -94,12 +95,15 @@ export async function countPresets(env: Env, sid: string, kind: PresetKind): Pro
 }
 
 /**
- * 仅当该 sid 下 kind='artist' 的记录为 0 时，种入内置画师串（builtin=1）。
- * 不覆盖用户编辑/删除后的结果。
+ * 给该 sid 种入内置画师串（builtin=1）。
+ * - 每个 sid 只种一次：完成后在 runtime_kv 记 `preset_seed:artist:<sid>`；
+ * - 若用户把内置项全部删掉，也**不会**再次种入（尊重用户删除）；
+ * - 仅在尚未种过时执行，因此新建分享密码时调用即可获得一份内置画师串。
  */
 export async function ensureBuiltinArtists(env: Env, sid: string): Promise<void> {
-  const count = await countPresets(env, sid, "artist");
-  if (count > 0) return;
+  const seedKey = `preset_seed:artist:${sid}`;
+  if (await getKv(env, seedKey)) return;
+
   const now = nowIso();
   for (const artist of BUILTIN_ARTISTS) {
     await env.DB.prepare(
@@ -108,6 +112,7 @@ export async function ensureBuiltinArtists(env: Env, sid: string): Promise<void>
       .bind(newId(), sid, "artist", artist.name, artist.content, "{}", 1, now, now)
       .run();
   }
+  await setKv(env, seedKey, "1");
 }
 
 export async function getPreset(env: Env, id: string): Promise<PresetRow | null> {
