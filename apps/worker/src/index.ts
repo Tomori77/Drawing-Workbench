@@ -7,6 +7,8 @@ import { checkin } from "./routes/checkin";
 import { rewriteRules } from "./routes/rewriteRules";
 import { generate } from "./routes/generate";
 import { gallery } from "./routes/gallery";
+import { logs } from "./routes/logs";
+import { profile } from "./routes/profile";
 import { gatewayV1, gatewayGenerateRoute } from "./routes/gateway";
 import { staticGate } from "./routes/staticGate";
 import { runScheduled } from "./checkin/run";
@@ -25,6 +27,8 @@ app.route("/api/checkin", checkin);
 app.route("/api/rewrite-rules", rewriteRules);
 app.route("/api/generate", generate);
 app.route("/api/gallery", gallery);
+app.route("/api/logs", logs);
+app.route("/api/profile", profile);
 
 app.route("/v1", gatewayV1);
 app.route("/generate", gatewayGenerateRoute);

@@ -8,6 +8,8 @@ import Accounts from "./routes/Accounts";
 import ApiKeys from "./routes/ApiKeys";
 import CheckinSettings from "./routes/CheckinSettings";
 import Upstreams from "./routes/Upstreams";
+import Logs from "./routes/Logs";
+import Profile from "./routes/Profile";
 import Placeholder from "./routes/Placeholder";
 import ProtectedRoute from "./routes/ProtectedRoute";
 import OwnerRoute from "./routes/OwnerRoute";
@@ -92,7 +94,7 @@ export default function App() {
         path="/console/logs"
         element={
           <OwnerOnly>
-            <Placeholder title="生成日志" description="查看工作台与开放 API 的生成请求记录。" />
+            <Logs />
           </OwnerOnly>
         }
       />
@@ -100,7 +102,7 @@ export default function App() {
         path="/console/profile"
         element={
           <OwnerOnly>
-            <Placeholder title="个人资料" description="管理账户身份与偏好设置。" />
+            <Profile />
           </OwnerOnly>
         }
       />

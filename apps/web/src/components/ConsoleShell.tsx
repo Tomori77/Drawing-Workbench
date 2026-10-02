@@ -3,6 +3,7 @@ import { Link, NavLink, useLocation } from "react-router-dom";
 import type { ReactNode } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useAuth } from "../hooks/useAuth";
+import { useProfile } from "../hooks/useProfile";
 import { useSidebarStore } from "../lib/sidebar";
 import {
   IconBrush,
@@ -151,7 +152,11 @@ export default function ConsoleShell({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const isOwner = auth?.role === "owner";
   const crumb = crumbFor(location.pathname);
-  const roleInitial = (auth?.role ?? "?").charAt(0).toUpperCase();
+  const profileQuery = useProfile(isOwner);
+  const nickname = profileQuery.data?.nickname ?? "";
+  const displayName = nickname || auth?.role || "未知";
+  const roleInitial = displayName.charAt(0).toUpperCase();
+  const avatarColor = profileQuery.data?.avatar_color;
 
   useEffect(() => {
     setDrawerOpen(false);
@@ -254,8 +259,11 @@ export default function ConsoleShell({ children }: { children: ReactNode }) {
               <span>Gems</span>
             </span>
             <span className="hidden items-center gap-2 sm:flex">
-              <span className="text-xs text-(--color-muted-2)">{auth?.role ?? "未知"}</span>
-              <span className="flex size-8 items-center justify-center rounded-full bg-(--color-primary) text-xs font-semibold text-white">
+              <span className="max-w-32 truncate text-xs text-(--color-muted-2)">{displayName}</span>
+              <span
+                className="flex size-8 items-center justify-center rounded-full bg-(--color-primary) text-xs font-semibold text-white"
+                style={avatarColor ? { backgroundColor: avatarColor } : undefined}
+              >
                 {roleInitial}
               </span>
             </span>

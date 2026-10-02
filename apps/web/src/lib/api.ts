@@ -471,3 +471,114 @@ export function checkinAccount(id: string): Promise<CheckinResult> {
     method: "POST"
   });
 }
+
+export type LogSource = "workbench" | "gateway";
+
+export interface LogItem {
+  id: number;
+  request_id: string;
+  source: LogSource;
+  path: string;
+  mode: string;
+  status_code: number | null;
+  ok: boolean;
+  duration_ms: number | null;
+  bytes_in: number | null;
+  bytes_out: number | null;
+  cost_gems: number;
+  created_at: string;
+  key_name: string | null;
+  account_label: string | null;
+}
+
+export interface LogsPage {
+  items: LogItem[];
+  total: number;
+  counts: { workbench: number; gateway: number };
+  limit: number;
+  offset: number;
+}
+
+export interface ListLogsArgs {
+  source?: "all" | LogSource;
+  status?: "all" | "ok" | "fail";
+  limit?: number;
+  offset?: number;
+}
+
+export function listLogs({
+  source = "all",
+  status = "all",
+  limit = 50,
+  offset = 0
+}: ListLogsArgs = {}): Promise<LogsPage> {
+  const params = new URLSearchParams({
+    source,
+    status,
+    limit: String(limit),
+    offset: String(offset)
+  });
+  return apiFetch<LogsPage>(`/api/logs?${params.toString()}`);
+}
+
+export interface LogAttempt {
+  id: number;
+  request_id: string;
+  gateway_key_id: string | null;
+  account_id: string | null;
+  attempt_no: number;
+  status_code: number | null;
+  error: string | null;
+  created_at: string;
+  account_label: string | null;
+}
+
+export interface LogAttemptsResponse {
+  items: LogAttempt[];
+  total: number;
+}
+
+export function getLogAttempts(requestId: string): Promise<LogAttemptsResponse> {
+  return apiFetch<LogAttemptsResponse>(
+    `/api/logs/${encodeURIComponent(requestId)}/attempts`
+  );
+}
+
+export interface SiteCounts {
+  accounts: number;
+  upstreams: number;
+  api_keys: number;
+  generations: number;
+  logs: number;
+}
+
+export interface Profile {
+  nickname: string;
+  avatar_color: string;
+  preferences: Record<string, unknown>;
+  updated_at: string;
+  identity: { role: string };
+  site: {
+    version: string;
+    environment: string;
+    domain: string | null;
+    counts: SiteCounts;
+  };
+}
+
+export interface ProfilePatch {
+  nickname?: string;
+  avatar_color?: string;
+  preferences?: Record<string, unknown>;
+}
+
+export function getProfile(): Promise<Profile> {
+  return apiFetch<Profile>("/api/profile");
+}
+
+export function updateProfile(patch: ProfilePatch): Promise<Profile> {
+  return apiFetch<Profile>("/api/profile", {
+    method: "PATCH",
+    body: JSON.stringify(patch)
+  });
+}

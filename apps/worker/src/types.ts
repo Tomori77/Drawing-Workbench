@@ -4,6 +4,7 @@ export interface Env {
   SESSION_SECRET: string;
   ENCRYPTION_KEY: string;
   APP_ENV?: string;
+  APP_VERSION?: string;
   ASSETS?: Fetcher;
   DB: D1Database;
   BUCKET: R2Bucket;
