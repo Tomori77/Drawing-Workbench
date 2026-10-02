@@ -29,3 +29,7 @@ migrations_dir = "migrations"
 [[r2_buckets]]
 binding = "BUCKET"
 bucket_name = "drawing-workbench"
+
+# 自动签到/余额刷新/冷却回收：每 5 分钟唤醒一次，由 scheduled 入口处理。
+[triggers]
+crons = ["*/5 * * * *"]

@@ -32,7 +32,7 @@ export interface UpstreamRequest {
   url: string;
   method: string;
   headers: Record<string, string>;
-  body?: string;
+  body?: string | Uint8Array;
 }
 
 export interface CanonicalImage {

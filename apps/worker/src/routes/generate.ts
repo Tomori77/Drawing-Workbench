@@ -13,7 +13,7 @@ generate.use("*", requireSession);
 
 const MAX_N = 8;
 const DEFAULT_MODEL = "nai-diffusion-4-5-full";
-const SIZE_ALIAS: Record<string, string> = {
+export const SIZE_ALIAS: Record<string, string> = {
   "竖图": "832x1216",
   "横图": "1216x832",
   "方图": "1024x1024"
@@ -36,7 +36,7 @@ function asStringArray(value: string | string[] | undefined): string[] {
   return list.map((item) => String(item ?? "")).filter((item) => item.trim().length > 0);
 }
 
-function parseSize(size: string | undefined): { width: number; height: number } | null {
+export function parseSize(size: string | undefined): { width: number; height: number } | null {
   if (!size) return null;
   const raw = SIZE_ALIAS[size.trim()] ?? size.trim();
   const match = raw.match(/^(\d{2,5})\s*[xX×]\s*(\d{2,5})$/);
@@ -79,7 +79,7 @@ export function inboundToCanonical(body: InboundBody): CanonicalRequest {
   };
 }
 
-function mimeFrom(b64: string, contentType: string | null): string {
+export function mimeFrom(b64: string, contentType: string | null): string {
   if (contentType && contentType.startsWith("image/")) return contentType.split(";")[0]!.trim();
   if (b64.startsWith("iVBORw0KGgo")) return "image/png";
   if (b64.startsWith("/9j/")) return "image/jpeg";
@@ -144,7 +144,8 @@ export function mapUpstreamError(result: PipelineResult): { status: number; erro
   const code = result.error?.code ?? "UPSTREAM_ERROR";
   const upstreamStatus = result.error?.status ?? result.status ?? 502;
   let status: number;
-  if (code === "UPSTREAM_RESPONSE_TOO_LARGE") status = 413;
+  if (code === "CONTENT_BLOCKED") status = upstreamStatus === 403 ? 403 : 400;
+  else if (code === "UPSTREAM_RESPONSE_TOO_LARGE") status = 413;
   else if (code === "UPSTREAM_TIMEOUT") status = 504;
   else if (code === "NO_UPSTREAM" || code === "NO_ACCOUNT" || code === "ALL_ACCOUNTS_COOLING") status = 502;
   else if (upstreamStatus === 401 || upstreamStatus === 402 || upstreamStatus === 429) status = 429;

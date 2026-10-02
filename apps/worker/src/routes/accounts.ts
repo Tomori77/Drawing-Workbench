@@ -5,13 +5,13 @@ import {
   getAccount,
   listAccountsPublic,
   presentAccount,
-  toAccountPublic,
   updateAccount
 } from "../db/accounts";
 import { getUpstream } from "../db/upstreams";
 import { loginUpstreamAccount, UpstreamHttpError } from "../pool/login";
 import { provisionToken } from "../pool/provision";
 import { refreshAccountGems, refreshAllGems } from "../pool/balance";
+import { performCheckin } from "../checkin/run";
 import { readJson } from "../lib/json";
 import { truncateLog } from "../lib/log";
 import { requireOwner } from "./guard";
@@ -176,6 +176,6 @@ accounts.post("/:id/provision_token", async (c) => {
 accounts.post("/:id/test", async (c) => {
   const row = await getAccount(c.env, c.req.param("id"));
   if (!row) return c.json({ error: "not_found" }, 404);
-  // TODO: 手动签到（调上游签到接口）由自动签到步骤实现；此处仅占位。
-  return c.json({ ok: false, todo: "manual_checkin_not_implemented", account: toAccountPublic(row) }, 501);
+  const result = await performCheckin(c.env, row, null, { manual: true });
+  return c.json(result, result.ok ? 200 : 502);
 });

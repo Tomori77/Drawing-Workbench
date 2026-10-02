@@ -5,6 +5,8 @@ import { markAccountFailure, markAccountSuccess, isCooldownTrigger } from "../po
 import { refreshJwt } from "../pool/login";
 import { provisionToken } from "../pool/provision";
 import { getAdapter } from "./registry";
+import { applyRules, loadRules, RewriteBlockedError } from "../rewrite/engine";
+import type { RewriteRule } from "../rewrite/types";
 import { newId } from "../lib/ids";
 import { nowIso } from "../lib/time";
 import { truncateLog } from "../lib/log";
@@ -24,11 +26,18 @@ export interface PipelineOptions {
   env: Env;
   fetch?: typeof fetch;
   rewrite?: (canonical: CanonicalRequest) => Promise<CanonicalRequest>;
+  rewriteRules?: RewriteRule[];
+  skipRewrite?: boolean;
   selectUpstreams?: (upstreams: UpstreamConfig[]) => UpstreamConfig[];
   credential?: string;
   accountStrategy?: string;
   timeoutMs?: number;
   maxBytes?: number;
+  gatewayKeyId?: string;
+  mode?: string;
+  rawBody?: Uint8Array | string;
+  allowedUpstreams?: string[];
+  allowedModels?: string[];
 }
 
 export interface PipelineAttempt {
@@ -203,6 +212,7 @@ async function executeAttempt(
 async function logAttempt(
   env: Env,
   requestId: string,
+  gatewayKeyId: string | null,
   accountId: string | null,
   attemptNo: number,
   status: number | null,
@@ -211,7 +221,7 @@ async function logAttempt(
   await env.DB.prepare(
     "INSERT INTO request_attempts (request_id, gateway_key_id, account_id, attempt_no, status_code, error, created_at) VALUES (?,?,?,?,?,?,?)"
   )
-    .bind(requestId, null, accountId, attemptNo, status, error ? truncateLog(error, ATTEMPT_ERROR_MAX) : null, nowIso())
+    .bind(requestId, gatewayKeyId, accountId, attemptNo, status, error ? truncateLog(error, ATTEMPT_ERROR_MAX) : null, nowIso())
     .run()
     .catch(() => {});
 }
@@ -219,6 +229,8 @@ async function logAttempt(
 async function logRequest(
   env: Env,
   requestId: string,
+  gatewayKeyId: string | null,
+  mode: string,
   accountId: string | null,
   path: string,
   status: number,
@@ -231,7 +243,7 @@ async function logRequest(
   await env.DB.prepare(
     "INSERT INTO request_logs (request_id, gateway_key_id, account_id, path, mode, status_code, ok, duration_ms, bytes_in, bytes_out, cost_gems, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
   )
-    .bind(requestId, null, accountId, path, "restricted", status, ok ? 1 : 0, durationMs, bytesIn, bytesOut, costGems, nowIso())
+    .bind(requestId, gatewayKeyId, accountId, path, mode, status, ok ? 1 : 0, durationMs, bytesIn, bytesOut, costGems, nowIso())
     .run()
     .catch(() => {});
 }
@@ -244,14 +256,38 @@ export async function runPipeline(
   const timeoutMs = opts.timeoutMs ?? UPSTREAM_TIMEOUT_MS;
   const maxBytes = opts.maxBytes ?? UPSTREAM_MAX_BYTES;
   const started = Date.now();
+  const gatewayKeyId = opts.gatewayKeyId ?? null;
+  const mode = opts.mode ?? "restricted";
 
-  // TODO: 改写管线（重写规则 / 提示词改写 / 参数治理）在此接入。
-  const rewritten = opts.rewrite ? await opts.rewrite(canonical) : canonical;
+  // 改写管线：参数映射 → 提示词改写 → 内容策略 → 请求控制。
+  // 规则为 D1 中的声明式 JSON，不执行任意代码；命中 block 直接返回，不请求上游。
+  let rewritten = canonical;
+  try {
+    if (opts.rewrite) {
+      rewritten = await opts.rewrite(canonical);
+    } else if (!opts.skipRewrite) {
+      const rules = opts.rewriteRules ?? (await loadRules(opts.env));
+      rewritten = applyRules(canonical, rules);
+    }
+  } catch (err) {
+    if (err instanceof RewriteBlockedError) {
+      return {
+        ok: false,
+        status: err.status,
+        error: { message: err.message, code: err.code, status: err.status, retryable: false }
+      };
+    }
+    throw err;
+  }
 
   // TODO: 多上游路由（按 key 的模型权限筛选候选上游，按优先级/权重选择）。
   //       当前仅取 priority 首个启用上游。
   const upstreams = await loadUpstreams(opts.env);
-  const ordered = opts.selectUpstreams ? opts.selectUpstreams(upstreams) : upstreams;
+  let ordered = opts.selectUpstreams ? opts.selectUpstreams(upstreams) : upstreams;
+  if (opts.allowedUpstreams?.length) {
+    const allowed = new Set(opts.allowedUpstreams);
+    ordered = ordered.filter((u) => allowed.has(u.id));
+  }
   const first = ordered[0];
   if (!first) {
     return { ok: false, error: { message: "no_upstream", code: "NO_UPSTREAM" } };
@@ -265,26 +301,32 @@ export async function runPipeline(
   const isPool = upstream.type === "nai-compatible";
   const requestId = newId();
 
+  // passthrough：以适配器构造 URL/headers，但 body 用调用方原始字节（不重建）。
+  const buildRequest = (token: string): UpstreamRequest => {
+    const built = adapter.buildRequest(rewritten, upstream, { token });
+    return opts.rawBody !== undefined ? { ...built, body: opts.rawBody as Uint8Array | string } : built;
+  };
+
   const path = upstream.type === "nai-compatible" ? "/v1/nai/generate-image" : "/v1/images/generations";
 
   if (!isPool) {
     // 单凭据上游：凭据来自 upstreams.auth_enc，或调用方显式注入。
     const secret = opts.credential ?? upstream.credential ?? (await getUpstreamSecret(opts.env, upstream.id)) ?? "";
-    const request = adapter.buildRequest(rewritten, upstream, { token: secret });
+    const request = buildRequest(secret);
     const { result, status } = await executeAttempt(doFetch, adapter, request, timeoutMs, maxBytes);
-    await logAttempt(opts.env, requestId, null, 1, status, result.ok ? undefined : result.error?.message);
+    await logAttempt(opts.env, requestId, gatewayKeyId, null, 1, status, result.ok ? undefined : result.error?.message);
     const duration = Date.now() - started;
-    await logRequest(opts.env, requestId, null, path, status ?? 502, result.ok, duration, null, outputBytes(result), result.cost_gems ?? 0);
+    await logRequest(opts.env, requestId, gatewayKeyId, mode, null, path, status ?? 502, result.ok, duration, null, outputBytes(result), result.cost_gems ?? 0);
     return { ...result, upstream_id: upstream.id, account_id: null, request_id: requestId, attempts: 1, duration_ms: duration, request };
   }
 
   if (opts.credential) {
     // 调用方显式注入凭据：不做池选号，但按池语义记录。
-    const request = adapter.buildRequest(rewritten, upstream, { token: opts.credential });
+    const request = buildRequest(opts.credential);
     const { result, status } = await executeAttempt(doFetch, adapter, request, timeoutMs, maxBytes);
-    await logAttempt(opts.env, requestId, null, 1, status, result.ok ? undefined : result.error?.message);
+    await logAttempt(opts.env, requestId, gatewayKeyId, null, 1, status, result.ok ? undefined : result.error?.message);
     const duration = Date.now() - started;
-    await logRequest(opts.env, requestId, null, path, status ?? 502, result.ok, duration, null, outputBytes(result), result.cost_gems ?? 0);
+    await logRequest(opts.env, requestId, gatewayKeyId, mode, null, path, status ?? 502, result.ok, duration, null, outputBytes(result), result.cost_gems ?? 0);
     return { ...result, upstream_id: upstream.id, account_id: null, request_id: requestId, attempts: 1, duration_ms: duration, request };
   }
 
@@ -315,7 +357,7 @@ export async function runPipeline(
     for (let round = 0; ; round += 1) {
       attemptNo += 1;
       const call: UpstreamCall = {
-        request: adapter.buildRequest(rewritten, upstream, { token }),
+        request: buildRequest(token),
         adapter
       };
 
@@ -330,12 +372,12 @@ export async function runPipeline(
         status_code: status,
         error: success ? undefined : result.error?.message
       });
-      await logAttempt(opts.env, requestId, candidate.account.id, attemptNo, status, success ? undefined : result.error?.message);
+      await logAttempt(opts.env, requestId, gatewayKeyId, candidate.account.id, attemptNo, status, success ? undefined : result.error?.message);
 
       if (success) {
         await markAccountSuccess(opts.env, candidate.account.id).catch(() => {});
         const duration = Date.now() - started;
-        await logRequest(opts.env, requestId, candidate.account.id, path, status ?? 200, true, duration, null, outputBytes(result), result.cost_gems ?? 0);
+        await logRequest(opts.env, requestId, gatewayKeyId, mode, candidate.account.id, path, status ?? 200, true, duration, null, outputBytes(result), result.cost_gems ?? 0);
         return {
           ...result,
           upstream_id: upstream.id,
@@ -376,7 +418,7 @@ export async function runPipeline(
 
       // 非转移错误（参数错误等 4xx）：不换号，立即返回。
       const duration = Date.now() - started;
-      await logRequest(opts.env, requestId, candidate.account.id, path, errorStatus ?? 400, false, duration, null, null, 0);
+      await logRequest(opts.env, requestId, gatewayKeyId, mode, candidate.account.id, path, errorStatus ?? 400, false, duration, null, null, 0);
       return {
         ...result,
         upstream_id: upstream.id,
@@ -391,7 +433,7 @@ export async function runPipeline(
   }
 
   const duration = Date.now() - started;
-  await logRequest(opts.env, requestId, null, path, 502, false, duration, null, null, 0);
+  await logRequest(opts.env, requestId, gatewayKeyId, mode, null, path, 502, false, duration, null, null, 0);
   return {
     ok: false,
     status: 502,
