@@ -180,6 +180,7 @@ export interface GalleryItem {
   owner_sid?: string;
   size_bytes?: number;
   created_at: string;
+  is_public: boolean;
   url: string;
   thumb_url: string | null;
 }
@@ -193,6 +194,7 @@ export interface GalleryMeta {
   height: number | null;
   size_bytes: number;
   created_at: string;
+  is_public: boolean;
   url: string;
   thumb_url: string | null;
   upstream_id: string | null;
@@ -220,11 +222,18 @@ export interface ListGalleryArgs {
   limit?: number;
   offset?: number;
   sid?: string;
+  scope?: "mine" | "public";
 }
 
-export function listGallery({ limit = 24, offset = 0, sid }: ListGalleryArgs = {}): Promise<GalleryPage> {
+export function listGallery({
+  limit = 24,
+  offset = 0,
+  sid,
+  scope
+}: ListGalleryArgs = {}): Promise<GalleryPage> {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (sid) params.set("sid", sid);
+  if (scope) params.set("scope", scope);
   return apiFetch<GalleryPage>(`/api/gallery?${params.toString()}`);
 }
 
@@ -382,6 +391,19 @@ export function deleteAsset(id: string): Promise<{ ok: boolean; id: string }> {
   return apiFetch<{ ok: boolean; id: string }>(`/api/gallery/${encodeURIComponent(id)}`, {
     method: "DELETE"
   });
+}
+
+export function setAssetPublic(
+  id: string,
+  isPublic: boolean
+): Promise<{ ok: boolean; id: string; is_public: boolean }> {
+  return apiFetch<{ ok: boolean; id: string; is_public: boolean }>(
+    `/api/gallery/${encodeURIComponent(id)}/publish`,
+    {
+      method: "POST",
+      body: JSON.stringify({ public: isPublic })
+    }
+  );
 }
 
 export function clearGallery(sid?: string): Promise<{ ok: boolean }> {

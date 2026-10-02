@@ -24,7 +24,7 @@ export default function Home() {
   const { data: auth } = useAuth();
   const isOwner = auth?.role === "owner";
   const accountsQuery = useAccounts(undefined, isOwner);
-  const galleryQuery = useGallery(undefined, 1);
+  const galleryQuery = useGallery(undefined, "mine", 1);
   const total = galleryQuery.data?.pages[0]?.total;
   const poolGems = accountsQuery.data?.total_gems;
   const stats = [

@@ -24,6 +24,7 @@ interface AssetRow {
   owner_sid: string;
   size_bytes: number;
   created_at: string;
+  is_public: number;
 }
 
 interface GenerationRow {
@@ -108,10 +109,15 @@ function clampOffset(raw: string | undefined): number {
   return Math.floor(n);
 }
 
-// friend 只能访问自己 sid 的资源；owner 任意。
-function canAccess(c: import("hono").Context<AppEnv>, row: AssetRow): boolean {
+// 可管理：owner 任意；friend 仅自己 sid 的资源。用于删除/公开切换/清空。
+function canManage(c: import("hono").Context<AppEnv>, row: AssetRow): boolean {
   if (c.get("role") === "owner") return true;
   return row.owner_sid === c.get("sid");
+}
+
+// 可读：可管理者，或任意公开图（所有已登录用户）。
+function canAccess(c: import("hono").Context<AppEnv>, row: AssetRow): boolean {
+  return canManage(c, row) || row.is_public === 1;
 }
 
 async function deleteByPrefix(env: AppEnv["Bindings"], prefix: string): Promise<number> {
@@ -144,10 +150,14 @@ gallery.get("/", async (c) => {
   const offset = clampOffset(c.req.query("offset"));
   const role = c.get("role");
   const sid = c.get("sid");
+  const scope = c.req.query("scope") === "public" ? "public" : "mine";
 
   let where = "";
   let params: unknown[] = [];
-  if (role === "owner") {
+  if (scope === "public") {
+    // 任意已登录用户：所有 sid 的公开图。
+    where = "WHERE is_public=1";
+  } else if (role === "owner") {
     const filterSid = c.req.query("sid");
     if (filterSid) {
       where = "WHERE owner_sid=?";
@@ -175,10 +185,11 @@ gallery.get("/", async (c) => {
     owner_sid: row.owner_sid,
     size_bytes: row.size_bytes,
     created_at: row.created_at,
+    is_public: row.is_public === 1,
     url: assetUrl(row.id, false),
     thumb_url: row.thumb_r2_key ? assetUrl(row.id, true) : null
   }));
-  return c.json({ items, total: totalRow?.c ?? items.length, limit, offset });
+  return c.json({ items, total: totalRow?.c ?? items.length, limit, offset, scope });
 });
 
 // owner 总览：owner 一行 + 每个分享密码一行，附图片用量与配方/画师串数量。
@@ -279,6 +290,7 @@ gallery.get("/:id/meta", async (c) => {
     height,
     size_bytes: row.size_bytes,
     created_at: row.created_at,
+    is_public: row.is_public === 1,
     url: assetUrl(row.id, false),
     thumb_url: row.thumb_r2_key ? assetUrl(row.id, true) : null,
     upstream_id: generation?.upstream_id ?? null,
@@ -292,10 +304,21 @@ gallery.get("/:id/meta", async (c) => {
   });
 });
 
+// 公开 / 取消公开：仅图片归属者或 owner 可操作（他人的公开图不可改）。
+gallery.post("/:id/publish", requireOrigin, async (c) => {
+  const id = c.req.param("id");
+  const body = await readJson<{ public?: boolean }>(c);
+  const row = await c.env.DB.prepare("SELECT * FROM assets WHERE id=?").bind(id).first<AssetRow>();
+  if (!row || !canManage(c, row)) return c.json({ error: "not_found" }, 404);
+  const next = body.public === true ? 1 : 0;
+  await c.env.DB.prepare("UPDATE assets SET is_public=? WHERE id=?").bind(next, id).run();
+  return c.json({ ok: true, id, is_public: next === 1 });
+});
+
 gallery.post("/:id/thumb", requireOrigin, async (c) => {
   const id = c.req.param("id");
   const row = await c.env.DB.prepare("SELECT * FROM assets WHERE id=?").bind(id).first<AssetRow>();
-  if (!row || !canAccess(c, row)) return c.json({ error: "not_found" }, 404);
+  if (!row || !canManage(c, row)) return c.json({ error: "not_found" }, 404);
 
   const contentType = c.req.header("Content-Type") ?? "";
   let bytes: Uint8Array | null = null;
@@ -331,7 +354,7 @@ gallery.post("/:id/thumb", requireOrigin, async (c) => {
 gallery.delete("/:id", requireOrigin, async (c) => {
   const id = c.req.param("id");
   const row = await c.env.DB.prepare("SELECT * FROM assets WHERE id=?").bind(id).first<AssetRow>();
-  if (!row || !canAccess(c, row)) return c.json({ error: "not_found" }, 404);
+  if (!row || !canManage(c, row)) return c.json({ error: "not_found" }, 404);
   const keys = [row.r2_key];
   if (row.thumb_r2_key) keys.push(row.thumb_r2_key);
   await c.env.BUCKET.delete(keys);

@@ -2,13 +2,15 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Dialog from "@radix-ui/react-dialog";
+import * as Tabs from "@radix-ui/react-tabs";
 import { useAuth } from "../hooks/useAuth";
 import {
   useClearGallery,
   useDeleteAsset,
   useGallery,
   useGalleryMeta,
-  useGalleryOverview
+  useGalleryOverview,
+  useSetAssetPublic
 } from "../hooks/useGallery";
 import type { GalleryItem, GalleryMeta } from "../lib/api";
 import { actionTabs, gallerySorts, modelOptions, noiseScheduleOptions, samplerOptions } from "../lib/mock";
@@ -96,14 +98,18 @@ export default function Gallery() {
   const isOwner = auth?.role === "owner";
   const [sort, setSort] = useState(gallerySorts[0].value);
   const [sidFilter, setSidFilter] = useState("all");
+  const [tab, setTab] = useState<"mine" | "public">("mine");
   const overviewQuery = useGalleryOverview(isOwner);
-  const galleryQuery = useGallery(sidFilter === "all" ? undefined : sidFilter);
+  const mineQuery = useGallery(sidFilter === "all" ? undefined : sidFilter, "mine");
+  const publicQuery = useGallery(undefined, "public");
+  const activeQuery = tab === "mine" ? mineQuery : publicQuery;
   const deleteMutation = useDeleteAsset();
+  const publishMutation = useSetAssetPublic();
   const clearMutation = useClearGallery();
   const [lightbox, setLightbox] = useState<GalleryItem | null>(null);
   const [pendingDelete, setPendingDelete] = useState<GalleryItem | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
-  const [menu, setMenu] = useState<{ item: GalleryItem; x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{ item: GalleryItem; x: number; y: number; mine: boolean } | null>(null);
   const [metaId, setMetaId] = useState<string | null>(null);
   const [copyNotice, setCopyNotice] = useState<string | null>(null);
   const metaQuery = useGalleryMeta(metaId);
@@ -128,10 +134,15 @@ export default function Gallery() {
     navigate("/console/playground", { state: { reproduce: meta } });
   };
 
-  const items = (galleryQuery.data?.pages ?? []).flatMap((page) => page.items);
-  const total = galleryQuery.data?.pages[0]?.total ?? 0;
+  const items = (activeQuery.data?.pages ?? []).flatMap((page) => page.items);
+  const total = activeQuery.data?.pages[0]?.total ?? 0;
   const overview = overviewQuery.data?.items ?? [];
   const clearingSid = sidFilter === "all" ? undefined : sidFilter;
+
+  const labelForSid = (sid: string): string => {
+    if (sid === "owner") return "所有者";
+    return overview.find((row) => row.sid === sid)?.label ?? sid;
+  };
 
   return (
     <div className="flex min-h-dvh flex-col bg-(--color-bg)">
@@ -173,6 +184,25 @@ export default function Gallery() {
         </section>
 
         <section className="mx-auto w-full max-w-[1180px] px-5 pb-24 sm:px-8">
+          <div className="mb-5 flex justify-center">
+            <Tabs.Root value={tab} onValueChange={(value) => setTab(value as "mine" | "public")}>
+              <Tabs.List className="inline-flex items-center gap-1 rounded-full bg-(--color-surface-1) p-1 shadow-(--shadow-card)">
+                <Tabs.Trigger
+                  value="mine"
+                  className="rounded-full px-5 py-1.5 text-sm text-(--color-muted) transition-colors data-[state=active]:bg-(--color-text) data-[state=active]:font-medium data-[state=active]:text-white"
+                >
+                  我的作品
+                </Tabs.Trigger>
+                <Tabs.Trigger
+                  value="public"
+                  className="rounded-full px-5 py-1.5 text-sm text-(--color-muted) transition-colors data-[state=active]:bg-(--color-text) data-[state=active]:font-medium data-[state=active]:text-white"
+                >
+                  公开作品
+                </Tabs.Trigger>
+              </Tabs.List>
+            </Tabs.Root>
+          </div>
+
           <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
             <div className="inline-flex items-center gap-1 rounded-full bg-(--color-surface-1) p-1 shadow-(--shadow-card)">
               {gallerySorts.map((option) => {
@@ -198,7 +228,7 @@ export default function Gallery() {
               })}
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              {isOwner && overview.length > 0 && (
+              {tab === "mine" && isOwner && overview.length > 0 && (
                 <label className="flex items-center gap-2 text-xs text-(--color-muted)">
                   <span>画廊</span>
                   <select
@@ -216,27 +246,29 @@ export default function Gallery() {
                 </label>
               )}
               <p className="text-sm text-(--color-muted-2)">{total} 件作品</p>
-              <button
-                type="button"
-                disabled={items.length === 0}
-                onClick={() => setConfirmClear(true)}
-                className="rounded-full border border-(--color-border) px-3.5 py-1.5 text-xs text-(--color-muted) transition-colors hover:border-(--color-warning)/50 hover:text-(--color-warning) disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {clearingSid ? "清空该画廊" : "清空画廊"}
-              </button>
+              {tab === "mine" && (
+                <button
+                  type="button"
+                  disabled={items.length === 0}
+                  onClick={() => setConfirmClear(true)}
+                  className="rounded-full border border-(--color-border) px-3.5 py-1.5 text-xs text-(--color-muted) transition-colors hover:border-(--color-warning)/50 hover:text-(--color-warning) disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {clearingSid ? "清空该画廊" : "清空画廊"}
+                </button>
+              )}
             </div>
           </div>
 
-          {galleryQuery.isLoading ? (
+          {activeQuery.isLoading ? (
             <div className="flex flex-col items-center justify-center rounded-(--radius-card) border border-(--color-border) bg-(--color-surface-1) py-24 text-center">
               <p className="text-sm text-(--color-muted)">加载中…</p>
             </div>
-          ) : galleryQuery.isError ? (
+          ) : activeQuery.isError ? (
             <div className="flex flex-col items-center justify-center gap-3 rounded-(--radius-card) border border-(--color-border) bg-(--color-surface-1) py-24 text-center">
-              <p className="text-sm text-(--color-warning)">加载失败：{galleryQuery.error.message}</p>
+              <p className="text-sm text-(--color-warning)">加载失败：{activeQuery.error.message}</p>
               <button
                 type="button"
-                onClick={() => galleryQuery.refetch()}
+                onClick={() => activeQuery.refetch()}
                 className="rounded-full border border-(--color-border) px-4 py-1.5 text-sm transition-colors hover:border-(--color-border-strong)"
               >
                 重试
@@ -244,13 +276,19 @@ export default function Gallery() {
             </div>
           ) : items.length === 0 ? (
             <div className="flex flex-col items-center justify-center rounded-(--radius-card) border border-(--color-border) bg-(--color-surface-1) py-24 text-center">
-              <p className="text-sm text-(--color-muted)">画廊还是空的，去创作台生成第一张作品吧。</p>
-              <Link
-                to="/console/playground"
-                className="mt-4 inline-flex h-9 items-center rounded-full bg-(--color-primary) px-4 text-sm font-medium text-white transition-opacity hover:opacity-90"
-              >
-                打开创作台
-              </Link>
+              {tab === "public" ? (
+                <p className="text-sm text-(--color-muted)">还没有公开作品。</p>
+              ) : (
+                <>
+                  <p className="text-sm text-(--color-muted)">画廊还是空的，去创作台生成第一张作品吧。</p>
+                  <Link
+                    to="/console/playground"
+                    className="mt-4 inline-flex h-9 items-center rounded-full bg-(--color-primary) px-4 text-sm font-medium text-white transition-opacity hover:opacity-90"
+                  >
+                    打开创作台
+                  </Link>
+                </>
+              )}
             </div>
           ) : (
             <>
@@ -260,7 +298,7 @@ export default function Gallery() {
                     key={item.id}
                     onContextMenu={(e) => {
                       e.preventDefault();
-                      setMenu({ item, x: e.clientX, y: e.clientY });
+                      setMenu({ item, x: e.clientX, y: e.clientY, mine: tab === "mine" });
                     }}
                     className="group overflow-hidden rounded-(--radius-secondary) border border-(--color-border) bg-(--color-surface-1) shadow-(--shadow-card) transition-transform hover:-translate-y-0.5"
                   >
@@ -276,7 +314,11 @@ export default function Gallery() {
                         className="h-full w-full object-cover"
                       />
                       <span className="absolute top-2 left-2 rounded-full bg-black/30 px-2 py-0.5 text-[11px] text-white backdrop-blur">
-                        {auth?.role === "owner" ? "私有" : "仅自己可见"}
+                        {item.is_public
+                          ? "公开"
+                          : auth?.role === "owner"
+                            ? "私有"
+                            : "仅自己可见"}
                       </span>
                     </button>
                     <div className="flex items-center justify-between gap-2 p-3.5">
@@ -285,31 +327,35 @@ export default function Gallery() {
                           <span>{formatSize(item)}</span>
                         </div>
                         <p className="mt-1 truncate text-[11px] text-(--color-muted-2)">
-                          {formatTime(item.created_at)}
+                          {tab === "public"
+                            ? `${labelForSid(item.owner_sid ?? "owner")} · ${formatTime(item.created_at)}`
+                            : formatTime(item.created_at)}
                         </p>
                       </div>
-                      <button
-                        type="button"
-                        aria-label="删除作品"
-                        onClick={() => setPendingDelete(item)}
-                        className="shrink-0 rounded-full border border-(--color-border) px-2.5 py-1 text-[11px] text-(--color-muted) opacity-0 transition-opacity group-hover:opacity-100 hover:border-(--color-warning)/50 hover:text-(--color-warning) focus-visible:opacity-100"
-                      >
-                        删除
-                      </button>
+                      {tab === "mine" && (
+                        <button
+                          type="button"
+                          aria-label="删除作品"
+                          onClick={() => setPendingDelete(item)}
+                          className="shrink-0 rounded-full border border-(--color-border) px-2.5 py-1 text-[11px] text-(--color-muted) opacity-0 transition-opacity group-hover:opacity-100 hover:border-(--color-warning)/50 hover:text-(--color-warning) focus-visible:opacity-100"
+                        >
+                          删除
+                        </button>
+                      )}
                     </div>
                   </article>
                 ))}
               </div>
 
-              {galleryQuery.hasNextPage && (
+              {activeQuery.hasNextPage && (
                 <div className="mt-8 flex justify-center">
                   <button
                     type="button"
-                    disabled={galleryQuery.isFetchingNextPage}
-                    onClick={() => galleryQuery.fetchNextPage()}
+                    disabled={activeQuery.isFetchingNextPage}
+                    onClick={() => activeQuery.fetchNextPage()}
                     className="inline-flex h-10 items-center rounded-full border border-(--color-border) bg-(--color-surface-1) px-6 text-sm transition-colors hover:border-(--color-border-strong) disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {galleryQuery.isFetchingNextPage ? "加载中…" : "加载更多"}
+                    {activeQuery.isFetchingNextPage ? "加载中…" : "加载更多"}
                   </button>
                 </div>
               )}
@@ -405,14 +451,29 @@ export default function Gallery() {
               </a>
             </DropdownMenu.Item>
             <DropdownMenu.Separator className="my-1 h-px bg-(--color-border)" />
-            <DropdownMenu.Item
-              onSelect={() => {
-                if (menu) setPendingDelete(menu.item);
-              }}
-              className="flex cursor-pointer items-center rounded-lg px-2.5 py-2 text-sm text-(--color-warning) outline-none data-[highlighted]:bg-(--color-surface-2)"
-            >
-              删除
-            </DropdownMenu.Item>
+            {menu?.mine && (
+              <>
+                <DropdownMenu.Item
+                  onSelect={() => {
+                    if (menu) {
+                      publishMutation.mutate({ id: menu.item.id, isPublic: !menu.item.is_public });
+                    }
+                  }}
+                  className="flex cursor-pointer items-center rounded-lg px-2.5 py-2 text-sm outline-none data-[highlighted]:bg-(--color-surface-2)"
+                >
+                  {menu.item.is_public ? "取消公开" : "公开"}
+                </DropdownMenu.Item>
+                <DropdownMenu.Separator className="my-1 h-px bg-(--color-border)" />
+                <DropdownMenu.Item
+                  onSelect={() => {
+                    if (menu) setPendingDelete(menu.item);
+                  }}
+                  className="flex cursor-pointer items-center rounded-lg px-2.5 py-2 text-sm text-(--color-warning) outline-none data-[highlighted]:bg-(--color-surface-2)"
+                >
+                  删除
+                </DropdownMenu.Item>
+              </>
+            )}
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
@@ -466,6 +527,7 @@ export default function Gallery() {
                     <MetaRow label="张数" value={meta.n !== null ? String(meta.n) : "—"} />
                     <MetaRow label="上游" value={meta.upstream_id ?? "—"} />
                     <MetaRow label="成本" value={meta.cost_gems !== null ? `${meta.cost_gems} Gems` : "—"} />
+                    <MetaRow label="状态" value={meta.is_public ? "公开" : "私密"} />
                     <MetaRow label="创建时间" value={formatTime(meta.created_at)} />
                   </div>
 
