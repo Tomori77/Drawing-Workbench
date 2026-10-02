@@ -1,7 +1,7 @@
 {
   "name": "drawing-workbench",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "packageManager": "pnpm@10.16.1",
   "scripts": {
     "dev": "pnpm -r --parallel dev",
