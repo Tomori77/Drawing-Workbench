@@ -16,10 +16,10 @@ directory = "../web/dist"
 binding = "ASSETS"
 run_worker_first = true
 
-# 非敏感变量占位；敏感值（OWNER_PASSWORD / FRIEND_PASSWORD / SESSION_SECRET）
-# 通过 `wrangler secret put` 写入，不写进本文件。
+# 非敏感变量；敏感值（OWNER_PASSWORD / FRIEND_PASSWORD / SESSION_SECRET / ENCRYPTION_KEY）
+# 通过 `wrangler secret put` / `wrangler secret bulk` 写入，不写进本文件。
 [vars]
-APP_ENV = "development"
+APP_ENV = "production"
 
 # D1：会话元数据、上游配置、API Key、配额与生成记录。
 [[d1_databases]]
@@ -32,6 +32,11 @@ migrations_dir = "migrations"
 [[r2_buckets]]
 binding = "BUCKET"
 bucket_name = "drawing-workbench"
+
+# 自定义域名：由 Cloudflare 自动创建 DNS 记录与证书。
+[[routes]]
+pattern = "dw.646677.xyz"
+custom_domain = true
 
 # 自动签到/余额刷新/冷却回收：每 5 分钟唤醒一次，由 scheduled 入口处理。
 [triggers]
