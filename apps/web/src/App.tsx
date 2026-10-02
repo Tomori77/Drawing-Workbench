@@ -10,9 +10,18 @@ import CheckinSettings from "./routes/CheckinSettings";
 import Upstreams from "./routes/Upstreams";
 import Placeholder from "./routes/Placeholder";
 import ProtectedRoute from "./routes/ProtectedRoute";
+import OwnerRoute from "./routes/OwnerRoute";
 
 function Protected({ children }: { children: ReactNode }) {
   return <ProtectedRoute>{children}</ProtectedRoute>;
+}
+
+function OwnerOnly({ children }: { children: ReactNode }) {
+  return (
+    <ProtectedRoute>
+      <OwnerRoute>{children}</OwnerRoute>
+    </ProtectedRoute>
+  );
 }
 
 export default function App() {
@@ -50,49 +59,49 @@ export default function App() {
       <Route
         path="/console/api-keys"
         element={
-          <Protected>
+          <OwnerOnly>
             <ApiKeys />
-          </Protected>
+          </OwnerOnly>
         }
       />
       <Route
         path="/console/checkin"
         element={
-          <Protected>
+          <OwnerOnly>
             <CheckinSettings />
-          </Protected>
+          </OwnerOnly>
         }
       />
       <Route
         path="/console/upstreams"
         element={
-          <Protected>
+          <OwnerOnly>
             <Upstreams />
-          </Protected>
+          </OwnerOnly>
         }
       />
       <Route
         path="/console/accounts"
         element={
-          <Protected>
+          <OwnerOnly>
             <Accounts />
-          </Protected>
+          </OwnerOnly>
         }
       />
       <Route
         path="/console/logs"
         element={
-          <Protected>
+          <OwnerOnly>
             <Placeholder title="生成日志" description="查看工作台与开放 API 的生成请求记录。" />
-          </Protected>
+          </OwnerOnly>
         }
       />
       <Route
         path="/console/profile"
         element={
-          <Protected>
+          <OwnerOnly>
             <Placeholder title="个人资料" description="管理账户身份与偏好设置。" />
-          </Protected>
+          </OwnerOnly>
         }
       />
 

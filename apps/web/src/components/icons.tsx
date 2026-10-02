@@ -186,6 +186,41 @@ export function IconServer(props: IconProps) {
   );
 }
 
+export function IconMenu(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M4 7h16" />
+      <path d="M4 12h16" />
+      <path d="M4 17h16" />
+    </Base>
+  );
+}
+
+export function IconClose(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="m6 6 12 12" />
+      <path d="M18 6 6 18" />
+    </Base>
+  );
+}
+
+export function IconSliders(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M4 6h10" />
+      <path d="M18 6h2" />
+      <circle cx="16" cy="6" r="2" />
+      <path d="M4 12h2" />
+      <path d="M10 12h10" />
+      <circle cx="8" cy="12" r="2" />
+      <path d="M4 18h8" />
+      <path d="M16 18h4" />
+      <circle cx="14" cy="18" r="2" />
+    </Base>
+  );
+}
+
 export function IconLogo(props: IconProps) {
   return (
     <Base {...props}>

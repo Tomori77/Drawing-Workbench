@@ -3,9 +3,10 @@ import type { ReactNode } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
 import * as Slider from "@radix-ui/react-slider";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import * as Dialog from "@radix-ui/react-dialog";
 import ConsoleShell from "../components/ConsoleShell";
 import Lightbox from "../components/Lightbox";
-import { IconPlus, IconSpark } from "../components/icons";
+import { IconClose, IconPlus, IconSliders, IconSpark } from "../components/icons";
 import { useGenerate } from "../hooks/useGenerate";
 import { useGallery } from "../hooks/useGallery";
 import type { GenerateImage, GenerateParams } from "../lib/api";
@@ -102,6 +103,7 @@ export default function Playground() {
   const [promptTab, setPromptTab] = useState<PromptTab>("positive");
   const [sessionImages, setSessionImages] = useState<GenerateImage[]>([]);
   const [lightbox, setLightbox] = useState<GenerateImage | null>(null);
+  const [mobileParamsOpen, setMobileParamsOpen] = useState(false);
 
   const canvas = canvasSizes[sizeIndex];
   const generateMutation = useGenerate();
@@ -157,136 +159,143 @@ export default function Playground() {
 
   const displayImages = sessionImages.length > 0 ? sessionImages : generateMutation.data?.images ?? [];
 
+  const renderParamsBody = () => (
+    <div className="flex-1 overflow-y-auto">
+      <PanelSection title="模型">
+        <Field label="模型">
+          <SelectMenu ariaLabel="模型" value={model} options={modelOptions} onChange={setModel} />
+        </Field>
+        <Tabs.Root value={action} onValueChange={setAction}>
+          <Tabs.List className="grid grid-cols-3 gap-1 rounded-(--radius-input) bg-(--color-surface-2) p-1">
+            {actionTabs.map((tab) => (
+              <Tabs.Trigger
+                key={tab.value}
+                value={tab.value}
+                className="rounded-lg px-2 py-1.5 text-xs text-(--color-muted) outline-none transition-colors data-[state=active]:bg-(--color-surface-1) data-[state=active]:font-medium data-[state=active]:text-(--color-text) data-[state=active]:shadow-(--shadow-glass)"
+              >
+                {tab.label}
+              </Tabs.Trigger>
+            ))}
+          </Tabs.List>
+        </Tabs.Root>
+      </PanelSection>
+
+      <PanelSection title="画布" meta={canvas.ratio}>
+        <div className="grid grid-cols-2 gap-2">
+          {canvasSizes.map((option, index) => {
+            const active = index === sizeIndex;
+            return (
+              <button
+                key={option.ratio}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setSizeIndex(index)}
+                className={`flex h-12 flex-col items-center justify-center rounded-(--radius-input) border text-xs transition-colors ${
+                  active
+                    ? "border-(--color-text) bg-(--color-surface-2) font-medium"
+                    : "border-(--color-border) bg-(--color-surface-2)/40 text-(--color-muted) hover:border-(--color-border-strong)"
+                }`}
+              >
+                <span>{option.label}</span>
+                <span className="text-[11px] text-(--color-muted-2)">{option.ratio}</span>
+              </button>
+            );
+          })}
+        </div>
+      </PanelSection>
+
+      <PanelSection title="采样">
+        <Field label="采样器">
+          <SelectMenu
+            ariaLabel="采样器"
+            value={sampler}
+            options={samplerOptions}
+            onChange={setSampler}
+          />
+        </Field>
+        <Field label="噪声调度">
+          <SelectMenu
+            ariaLabel="噪声调度"
+            value={schedule}
+            options={noiseScheduleOptions}
+            onChange={setSchedule}
+          />
+        </Field>
+        <Field label="步数">
+          <div className="flex items-center gap-3">
+            <Slider.Root
+              value={[steps]}
+              min={1}
+              max={50}
+              step={1}
+              onValueChange={([v]) => setSteps(v)}
+              className="relative flex h-5 w-full touch-none items-center select-none"
+            >
+              <Slider.Track className="relative h-1 grow rounded-full bg-(--color-surface-2)">
+                <Slider.Range className="absolute h-full rounded-full bg-(--color-primary)" />
+              </Slider.Track>
+              <Slider.Thumb className="block size-4 rounded-full border border-black/5 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.25)] outline-none transition-transform hover:scale-110 focus-visible:ring-4 focus-visible:ring-(--color-primary)/30" />
+            </Slider.Root>
+            <span className="w-8 shrink-0 text-right text-sm tabular-nums">{steps}</span>
+          </div>
+        </Field>
+        <Field label="提示词引导">
+          <div className="flex items-center gap-3">
+            <Slider.Root
+              value={[guidance]}
+              min={0}
+              max={10}
+              step={0.1}
+              onValueChange={([v]) => setGuidance(Math.round(v * 10) / 10)}
+              className="relative flex h-5 w-full touch-none items-center select-none"
+            >
+              <Slider.Track className="relative h-1 grow rounded-full bg-(--color-surface-2)">
+                <Slider.Range className="absolute h-full rounded-full bg-(--color-primary)" />
+              </Slider.Track>
+              <Slider.Thumb className="block size-4 rounded-full border border-black/5 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.25)] outline-none transition-transform hover:scale-110 focus-visible:ring-4 focus-visible:ring-(--color-primary)/30" />
+            </Slider.Root>
+            <span className="w-8 shrink-0 text-right text-sm tabular-nums">
+              {guidance.toFixed(1)}
+            </span>
+          </div>
+        </Field>
+        <Field label="种子">
+          <input
+            type="text"
+            inputMode="numeric"
+            value={seed}
+            onChange={(e) => setSeed(e.target.value)}
+            placeholder="随机"
+            className="h-9 w-full rounded-(--radius-input) border border-(--color-border) bg-(--color-surface-1) px-3 text-sm outline-none placeholder:text-(--color-muted-2) focus:border-(--color-primary)"
+          />
+        </Field>
+      </PanelSection>
+    </div>
+  );
+
+  const paramsHeader = (
+    <div className="flex h-12 items-center justify-between border-b border-(--color-border) px-4">
+      <span className="text-sm font-semibold">参数</span>
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 rounded-full border border-(--color-border) px-2.5 py-1 text-xs text-(--color-muted) transition-colors hover:border-(--color-border-strong) hover:text-(--color-text)"
+      >
+        <IconPlus className="size-3" />
+        从 PNG 导入
+      </button>
+    </div>
+  );
+
   return (
     <ConsoleShell>
       <div className="flex min-h-[calc(100dvh-var(--topbar-h))]">
         <aside className="hidden w-80 shrink-0 flex-col border-r border-(--color-border) bg-(--color-surface-1) lg:flex">
-          <div className="flex h-12 items-center justify-between border-b border-(--color-border) px-4">
-            <span className="text-sm font-semibold">参数</span>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 rounded-full border border-(--color-border) px-2.5 py-1 text-xs text-(--color-muted) transition-colors hover:border-(--color-border-strong) hover:text-(--color-text)"
-            >
-              <IconPlus className="size-3" />
-              从 PNG 导入
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto">
-            <PanelSection title="模型">
-              <Field label="模型">
-                <SelectMenu ariaLabel="模型" value={model} options={modelOptions} onChange={setModel} />
-              </Field>
-              <Tabs.Root value={action} onValueChange={setAction}>
-                <Tabs.List className="grid grid-cols-3 gap-1 rounded-(--radius-input) bg-(--color-surface-2) p-1">
-                  {actionTabs.map((tab) => (
-                    <Tabs.Trigger
-                      key={tab.value}
-                      value={tab.value}
-                      className="rounded-lg px-2 py-1.5 text-xs text-(--color-muted) outline-none transition-colors data-[state=active]:bg-(--color-surface-1) data-[state=active]:font-medium data-[state=active]:text-(--color-text) data-[state=active]:shadow-(--shadow-glass)"
-                    >
-                      {tab.label}
-                    </Tabs.Trigger>
-                  ))}
-                </Tabs.List>
-              </Tabs.Root>
-            </PanelSection>
-
-            <PanelSection title="画布" meta={canvas.ratio}>
-              <div className="grid grid-cols-2 gap-2">
-                {canvasSizes.map((option, index) => {
-                  const active = index === sizeIndex;
-                  return (
-                    <button
-                      key={option.ratio}
-                      type="button"
-                      aria-pressed={active}
-                      onClick={() => setSizeIndex(index)}
-                      className={`flex h-12 flex-col items-center justify-center rounded-(--radius-input) border text-xs transition-colors ${
-                        active
-                          ? "border-(--color-text) bg-(--color-surface-2) font-medium"
-                          : "border-(--color-border) bg-(--color-surface-2)/40 text-(--color-muted) hover:border-(--color-border-strong)"
-                      }`}
-                    >
-                      <span>{option.label}</span>
-                      <span className="text-[11px] text-(--color-muted-2)">{option.ratio}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </PanelSection>
-
-            <PanelSection title="采样">
-              <Field label="采样器">
-                <SelectMenu
-                  ariaLabel="采样器"
-                  value={sampler}
-                  options={samplerOptions}
-                  onChange={setSampler}
-                />
-              </Field>
-              <Field label="噪声调度">
-                <SelectMenu
-                  ariaLabel="噪声调度"
-                  value={schedule}
-                  options={noiseScheduleOptions}
-                  onChange={setSchedule}
-                />
-              </Field>
-              <Field label="步数">
-                <div className="flex items-center gap-3">
-                  <Slider.Root
-                    value={[steps]}
-                    min={1}
-                    max={50}
-                    step={1}
-                    onValueChange={([v]) => setSteps(v)}
-                    className="relative flex h-5 w-full touch-none items-center select-none"
-                  >
-                    <Slider.Track className="relative h-1 grow rounded-full bg-(--color-surface-2)">
-                      <Slider.Range className="absolute h-full rounded-full bg-(--color-primary)" />
-                    </Slider.Track>
-                    <Slider.Thumb className="block size-4 rounded-full border border-black/5 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.25)] outline-none transition-transform hover:scale-110 focus-visible:ring-4 focus-visible:ring-(--color-primary)/30" />
-                  </Slider.Root>
-                  <span className="w-8 shrink-0 text-right text-sm tabular-nums">{steps}</span>
-                </div>
-              </Field>
-              <Field label="提示词引导">
-                <div className="flex items-center gap-3">
-                  <Slider.Root
-                    value={[guidance]}
-                    min={0}
-                    max={10}
-                    step={0.1}
-                    onValueChange={([v]) => setGuidance(Math.round(v * 10) / 10)}
-                    className="relative flex h-5 w-full touch-none items-center select-none"
-                  >
-                    <Slider.Track className="relative h-1 grow rounded-full bg-(--color-surface-2)">
-                      <Slider.Range className="absolute h-full rounded-full bg-(--color-primary)" />
-                    </Slider.Track>
-                    <Slider.Thumb className="block size-4 rounded-full border border-black/5 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.25)] outline-none transition-transform hover:scale-110 focus-visible:ring-4 focus-visible:ring-(--color-primary)/30" />
-                  </Slider.Root>
-                  <span className="w-8 shrink-0 text-right text-sm tabular-nums">
-                    {guidance.toFixed(1)}
-                  </span>
-                </div>
-              </Field>
-              <Field label="种子">
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={seed}
-                  onChange={(e) => setSeed(e.target.value)}
-                  placeholder="随机"
-                  className="h-9 w-full rounded-(--radius-input) border border-(--color-border) bg-(--color-surface-1) px-3 text-sm outline-none placeholder:text-(--color-muted-2) focus:border-(--color-primary)"
-                />
-              </Field>
-            </PanelSection>
-          </div>
+          {paramsHeader}
+          {renderParamsBody()}
         </aside>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <section className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-6">
+          <section className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4 sm:p-6">
             {generateMutation.isPending ? (
               <div className="flex flex-col items-center text-center">
                 <span className="mb-4 flex size-16 animate-pulse items-center justify-center rounded-full border border-(--color-border) bg-(--color-surface-1) text-(--color-primary) shadow-(--shadow-card)">
@@ -351,7 +360,7 @@ export default function Playground() {
                     <span className="ml-1.5 text-xs text-(--color-muted-2)">{negativeTokens}</span>
                   </Tabs.Trigger>
                 </Tabs.List>
-                <span className="pb-2.5 text-xs text-(--color-muted-2)">相关标签</span>
+                <span className="hidden pb-2.5 text-xs text-(--color-muted-2) sm:inline">相关标签</span>
               </div>
 
               <Tabs.Content value="positive" className="px-4 pt-3 outline-none">
@@ -384,20 +393,30 @@ export default function Playground() {
                   {prompt.length + negative.length} 字符 · {canvas.ratio}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={submit}
-                disabled={generateMutation.isPending}
-                className="flex h-10 shrink-0 items-center gap-2 rounded-full bg-(--color-primary) px-6 text-sm font-medium text-white shadow-(--shadow-card) transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <span>{generateMutation.isPending ? "生成中…" : "生成"}</span>
-                <kbd className="rounded border border-white/30 bg-white/15 px-1 font-mono text-[10px]">
-                  Ctrl
-                </kbd>
-                <kbd className="-ml-1 rounded border border-white/30 bg-white/15 px-1 font-mono text-[10px]">
-                  Enter
-                </kbd>
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMobileParamsOpen(true)}
+                  className="flex h-10 items-center gap-1.5 rounded-full border border-(--color-border) bg-(--color-surface-1) px-4 text-sm text-(--color-text) transition-colors hover:border-(--color-border-strong) lg:hidden"
+                >
+                  <IconSliders className="size-4" />
+                  参数
+                </button>
+                <button
+                  type="button"
+                  onClick={submit}
+                  disabled={generateMutation.isPending}
+                  className="flex h-10 items-center gap-2 rounded-full bg-(--color-primary) px-6 text-sm font-medium text-white shadow-(--shadow-card) transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <span>{generateMutation.isPending ? "生成中…" : "生成"}</span>
+                  <kbd className="rounded border border-white/30 bg-white/15 px-1 font-mono text-[10px]">
+                    Ctrl
+                  </kbd>
+                  <kbd className="-ml-1 rounded border border-white/30 bg-white/15 px-1 font-mono text-[10px]">
+                    Enter
+                  </kbd>
+                </button>
+              </div>
             </div>
             {errorMessage && (
               <p className="border-t border-(--color-border) px-4 py-2 text-xs text-(--color-warning)">
@@ -447,6 +466,27 @@ export default function Playground() {
           )}
         </aside>
       </div>
+
+      <Dialog.Root open={mobileParamsOpen} onOpenChange={setMobileParamsOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden" />
+          <Dialog.Content className="fixed inset-y-0 left-0 z-50 flex w-[88vw] max-w-sm flex-col border-r border-(--color-border) bg-(--color-surface-1) shadow-(--shadow-float) outline-none lg:hidden">
+            <div className="flex h-12 shrink-0 items-center justify-between border-b border-(--color-border) px-4">
+              <Dialog.Title className="text-sm font-semibold">参数</Dialog.Title>
+              <Dialog.Close asChild>
+                <button
+                  type="button"
+                  aria-label="关闭参数"
+                  className="flex size-8 items-center justify-center rounded-(--radius-input) text-(--color-muted) transition-colors hover:bg-(--color-surface-2)"
+                >
+                  <IconClose className="size-4.5" />
+                </button>
+              </Dialog.Close>
+            </div>
+            {renderParamsBody()}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
 
       <Lightbox
         open={lightbox !== null}

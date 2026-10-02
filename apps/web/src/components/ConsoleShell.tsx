@@ -1,18 +1,21 @@
+import { useEffect, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import type { ReactNode } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
 import { useAuth } from "../hooks/useAuth";
 import { useSidebarStore } from "../lib/sidebar";
 import {
   IconBrush,
   IconCalendar,
   IconChevronLeft,
+  IconClose,
   IconDashboard,
   IconGallery,
   IconHistory,
   IconKey,
-  IconLock,
   IconLog,
   IconLogo,
+  IconMenu,
   IconSearch,
   IconServer,
   IconUser,
@@ -77,14 +80,82 @@ function crumbFor(pathname: string) {
   return { section: "创作", label: CRUMB_LABELS[pathname] ?? "概览" };
 }
 
+function navGroupsFor(isOwner: boolean): NavGroup[] {
+  return NAV_GROUPS.filter((group) => !(group.ownerOnly === true && !isOwner));
+}
+
+function NavItems({
+  isOwner,
+  collapsed,
+  onNavigate
+}: {
+  isOwner: boolean;
+  collapsed: boolean;
+  onNavigate?: () => void;
+}) {
+  return (
+    <nav className="flex flex-1 flex-col gap-7 overflow-y-auto px-3 py-4">
+      {navGroupsFor(isOwner).map((group) => (
+        <div key={group.title}>
+          {!collapsed && (
+            <div className="px-3 pb-2 text-[11px] font-medium tracking-wide text-(--color-muted-2)">
+              {group.title}
+            </div>
+          )}
+          <div className="flex flex-col gap-0.5">
+            {group.items
+              .filter((item) => !(item.ownerOnly === true && !isOwner))
+              .map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.to === "/console"}
+                  onClick={onNavigate}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 rounded-(--radius-input) px-3 py-2 text-sm transition-colors ${
+                      isActive
+                        ? "bg-(--color-text) font-medium text-white"
+                        : "text-(--color-text) hover:bg-(--color-surface-2)"
+                    } ${collapsed ? "justify-center" : ""}`
+                  }
+                >
+                  {item.icon}
+                  {!collapsed && <span className="truncate">{item.label}</span>}
+                </NavLink>
+              ))}
+          </div>
+        </div>
+      ))}
+    </nav>
+  );
+}
+
+function Brand({ className }: { className?: string }) {
+  return (
+    <Link to="/console" className={`group flex min-w-0 items-center gap-2.5 ${className ?? ""}`}>
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-(--color-text) text-white">
+        <IconLogo className="size-4.5" />
+      </span>
+      <span className="truncate text-[15px] font-semibold tracking-tight">
+        Drawing Workbench
+      </span>
+    </Link>
+  );
+}
+
 export default function ConsoleShell({ children }: { children: ReactNode }) {
   const { data: auth } = useAuth();
   const collapsed = useSidebarStore((state) => state.collapsed);
   const toggle = useSidebarStore((state) => state.toggle);
   const location = useLocation();
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const isOwner = auth?.role === "owner";
   const crumb = crumbFor(location.pathname);
   const roleInitial = (auth?.role ?? "?").charAt(0).toUpperCase();
+
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [location.pathname]);
 
   return (
     <div className="flex min-h-dvh bg-(--color-bg)">
@@ -94,75 +165,19 @@ export default function ConsoleShell({ children }: { children: ReactNode }) {
         }`}
       >
         <div className={`flex h-14 items-center ${collapsed ? "justify-center px-3" : "px-6"}`}>
-          <Link to="/console" className="group flex min-w-0 items-center gap-2.5">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-(--color-text) text-white">
+          {collapsed ? (
+            <Link
+              to="/console"
+              className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-(--color-text) text-white"
+            >
               <IconLogo className="size-4.5" />
-            </span>
-            {!collapsed && (
-              <span className="truncate text-[15px] font-semibold tracking-tight">
-                Drawing Workbench
-              </span>
-            )}
-          </Link>
+            </Link>
+          ) : (
+            <Brand />
+          )}
         </div>
 
-        <nav className="flex flex-1 flex-col gap-7 overflow-y-auto px-3 py-4">
-          {NAV_GROUPS.map((group) => {
-            const ownerOnly = group.ownerOnly === true;
-            const locked = ownerOnly && !isOwner;
-            return (
-              <div key={group.title}>
-                {!collapsed && (
-                  <div className="flex items-center gap-1.5 px-3 pb-2 text-[11px] font-medium tracking-wide text-(--color-muted-2)">
-                    <span>{group.title}</span>
-                    {locked && <IconLock className="size-3" />}
-                  </div>
-                )}
-                <div className="flex flex-col gap-0.5">
-                  {group.items.map((item) => {
-                    const itemLocked = locked || (item.ownerOnly === true && !isOwner);
-                    if (itemLocked) {
-                      return (
-                        <div
-                          key={item.to}
-                          title="仅所有者可用"
-                          className={`flex items-center gap-3 rounded-(--radius-input) px-3 py-2 text-sm text-(--color-muted-2) ${
-                            collapsed ? "justify-center" : ""
-                          }`}
-                        >
-                          {item.icon}
-                          {!collapsed && (
-                            <>
-                              <span className="truncate">{item.label}</span>
-                              <IconLock className="ml-auto size-3.5" />
-                            </>
-                          )}
-                        </div>
-                      );
-                    }
-                    return (
-                      <NavLink
-                        key={item.to}
-                        to={item.to}
-                        end={item.to === "/console"}
-                        className={({ isActive }) =>
-                          `flex items-center gap-3 rounded-(--radius-input) px-3 py-2 text-sm transition-colors ${
-                            isActive
-                              ? "bg-(--color-text) font-medium text-white"
-                              : "text-(--color-text) hover:bg-(--color-surface-2)"
-                          } ${collapsed ? "justify-center" : ""}`
-                        }
-                      >
-                        {item.icon}
-                        {!collapsed && <span className="truncate">{item.label}</span>}
-                      </NavLink>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </nav>
+        <NavItems isOwner={isOwner} collapsed={collapsed} />
 
         <div className="p-3">
           <button
@@ -180,8 +195,40 @@ export default function ConsoleShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
+      <Dialog.Root open={drawerOpen} onOpenChange={setDrawerOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden" />
+          <Dialog.Content className="fixed inset-y-0 left-0 z-50 flex w-[82vw] max-w-xs flex-col border-r border-(--color-border) bg-(--color-surface-1) shadow-(--shadow-float) outline-none lg:hidden">
+            <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-(--color-border) px-4">
+              <Dialog.Title asChild>
+                <Brand />
+              </Dialog.Title>
+              <Dialog.Close asChild>
+                <button
+                  type="button"
+                  aria-label="关闭导航"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-(--radius-input) text-(--color-muted) transition-colors hover:bg-(--color-surface-2)"
+                >
+                  <IconClose className="size-4.5" />
+                </button>
+              </Dialog.Close>
+            </div>
+            <NavItems isOwner={isOwner} collapsed={false} onNavigate={() => setDrawerOpen(false)} />
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-(--topbar-h) shrink-0 items-center gap-4 border-b border-(--color-border) bg-white/70 px-4 backdrop-blur-xl sm:px-6">
+        <header className="sticky top-0 z-30 flex h-(--topbar-h) shrink-0 items-center gap-3 border-b border-(--color-border) bg-white/70 px-4 backdrop-blur-xl sm:gap-4 sm:px-6">
+          <button
+            type="button"
+            onClick={() => setDrawerOpen(true)}
+            aria-label="打开导航"
+            className="-ml-1 flex size-9 shrink-0 items-center justify-center rounded-(--radius-input) text-(--color-text) transition-colors hover:bg-(--color-surface-2) lg:hidden"
+          >
+            <IconMenu className="size-5" />
+          </button>
+
           <nav className="flex min-w-0 items-center gap-2 text-sm text-(--color-muted)" aria-label="面包屑">
             <span className="shrink-0">{crumb.section}</span>
             <span className="text-(--color-muted-2)">/</span>
