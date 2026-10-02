@@ -1,17 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   batchCreateAccounts,
+  batchDeleteAccounts,
   createAccount,
   deleteAccount,
   listAccounts,
   provisionAccountToken,
+  provisionAllAccountTokens,
   refreshAccountGems,
   refreshAllGems,
   updateAccount,
   type AccountListResponse,
   type BatchCreateAccountBody,
   type BatchCreateResult,
+  type BatchDeleteAccountsResult,
   type CreateAccountBody,
+  type ProvisionAllAccountTokensBody,
+  type ProvisionAllResult,
   type RefreshAllResult,
   type UpdateAccountPatch
 } from "../lib/api";
@@ -86,6 +91,22 @@ export function useProvisionToken() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => provisionAccountToken(id),
+    onSuccess: () => invalidateAccounts(queryClient)
+  });
+}
+
+export function useProvisionAll() {
+  const queryClient = useQueryClient();
+  return useMutation<ProvisionAllResult, Error, ProvisionAllAccountTokensBody>({
+    mutationFn: (body: ProvisionAllAccountTokensBody) => provisionAllAccountTokens(body),
+    onSuccess: () => invalidateAccounts(queryClient)
+  });
+}
+
+export function useBatchDeleteAccounts() {
+  const queryClient = useQueryClient();
+  return useMutation<BatchDeleteAccountsResult, Error, string[]>({
+    mutationFn: (ids: string[]) => batchDeleteAccounts(ids),
     onSuccess: () => invalidateAccounts(queryClient)
   });
 }

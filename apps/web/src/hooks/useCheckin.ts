@@ -49,6 +49,7 @@ export function useCheckinAccount() {
     mutationFn: (id: string) => checkinAccount(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ACCOUNTS_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: CHECKIN_QUERY_KEY });
     }
   });
 }

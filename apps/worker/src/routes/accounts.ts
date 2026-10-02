@@ -3,9 +3,11 @@ import {
   createAccount,
   deleteAccount,
   getAccount,
+  listAccounts,
   listAccountsPublic,
   presentAccount,
-  updateAccount
+  updateAccount,
+  type AccountRow
 } from "../db/accounts";
 import { getUpstream } from "../db/upstreams";
 import { loginUpstreamAccount, UpstreamHttpError } from "../pool/login";
@@ -104,6 +106,73 @@ accounts.post("/batch", async (c) => {
     }
   }
   return c.json({ created: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length, items: results });
+});
+
+const MAX_PROVISION_BATCH = 50;
+
+accounts.post("/provision_all", async (c) => {
+  const body = await readJson<{ ids?: string[]; upstream_id?: string }>(c);
+  const ids = Array.isArray(body.ids) ? body.ids.filter((id) => typeof id === "string" && id) : null;
+  const upstreamId = typeof body.upstream_id === "string" && body.upstream_id ? body.upstream_id : undefined;
+
+  let targets: AccountRow[];
+  if (ids && ids.length) {
+    const rows = await Promise.all(ids.map((id) => getAccount(c.env, id)));
+    targets = rows.filter((row): row is AccountRow => row !== null);
+  } else {
+    const rows = await listAccounts(c.env, upstreamId);
+    targets = rows.filter((row) => row.enabled !== 0);
+  }
+  targets = targets.slice(0, MAX_PROVISION_BATCH);
+
+  const items: Array<{
+    id: string;
+    username: string;
+    ok: boolean;
+    has_api_token: boolean;
+    error?: string;
+  }> = [];
+  let success = 0;
+
+  for (const row of targets) {
+    try {
+      await provisionToken(c.env, row);
+      items.push({ id: row.id, username: row.username, ok: true, has_api_token: true });
+      success += 1;
+    } catch (err) {
+      const message = err instanceof Error ? truncateLog(err.message) : "provision_failed";
+      items.push({
+        id: row.id,
+        username: row.username,
+        ok: false,
+        has_api_token: false,
+        error: message
+      });
+    }
+  }
+
+  return c.json({ total: targets.length, success, failed: targets.length - success, items });
+});
+
+accounts.post("/batch_delete", async (c) => {
+  const body = await readJson<{ ids?: string[] }>(c);
+  const ids = Array.isArray(body.ids)
+    ? body.ids.filter((id): id is string => typeof id === "string" && id.length > 0)
+    : [];
+  if (!ids.length) return c.json({ error: "invalid_ids", message: "请选择要删除的账号" }, 400);
+
+  const items: Array<{ id: string; ok: boolean; error?: string }> = [];
+  let deleted = 0;
+  for (const id of ids) {
+    try {
+      await deleteAccount(c.env, id);
+      items.push({ id, ok: true });
+      deleted += 1;
+    } catch (err) {
+      items.push({ id, ok: false, error: err instanceof Error ? truncateLog(err.message) : "delete_failed" });
+    }
+  }
+  return c.json({ deleted, items });
 });
 
 accounts.post("/refresh_gems", async (c) => {

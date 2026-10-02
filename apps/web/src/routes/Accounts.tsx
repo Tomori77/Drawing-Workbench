@@ -14,8 +14,10 @@ import { IconPlus } from "../components/icons";
 import {
   useAccounts,
   useBatchCreateAccounts,
+  useBatchDeleteAccounts,
   useCreateAccount,
   useDeleteAccount,
+  useProvisionAll,
   useProvisionToken,
   useRefreshAccountGems,
   useRefreshAllGems,
@@ -26,6 +28,7 @@ import type {
   AccountPublic,
   AccountStatus,
   BatchCreateResult,
+  ProvisionAllResult,
   UpstreamPublic
 } from "../lib/api";
 
@@ -125,13 +128,56 @@ export default function Accounts() {
   const refreshAllMutation = useRefreshAllGems();
   const refreshOneMutation = useRefreshAccountGems();
   const provisionMutation = useProvisionToken();
+  const provisionAllMutation = useProvisionAll();
   const updateMutation = useUpdateAccount();
   const deleteMutation = useDeleteAccount();
+  const batchDeleteMutation = useBatchDeleteAccounts();
 
   const [addOpen, setAddOpen] = useState(false);
   const [batchOpen, setBatchOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<AccountPublic | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AccountPublic | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
+  const [provisionResult, setProvisionResult] = useState<ProvisionAllResult | null>(null);
+  const [provisionDetailOpen, setProvisionDetailOpen] = useState(false);
+
+  const selectableIds = useMemo(() => items.map((account) => account.id), [items]);
+  const selectedIds = useMemo(
+    () => selectableIds.filter((id) => selected.has(id)),
+    [selectableIds, selected]
+  );
+  const allSelected = selectableIds.length > 0 && selectedIds.length === selectableIds.length;
+  const someSelected = selectedIds.length > 0 && !allSelected;
+
+  const toggleOne = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const toggleAll = () => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (selectableIds.length > 0 && selectableIds.every((id) => next.has(id))) {
+        for (const id of selectableIds) next.delete(id);
+      } else {
+        for (const id of selectableIds) next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const runProvisionAll = () => {
+    if (selectedIds.length === 0) return;
+    setProvisionResult(null);
+    provisionAllMutation.mutate(
+      { ids: selectedIds },
+      { onSuccess: (data) => setProvisionResult(data) }
+    );
+  };
 
   const noUpstreams = !upstreamsQuery.isLoading && upstreams.length === 0;
 
@@ -189,6 +235,48 @@ export default function Accounts() {
             获取生图 Token 失败：{provisionMutation.error.message}
           </p>
         )}
+        {provisionAllMutation.isError && (
+          <p className="mt-4 text-sm text-(--color-warning)">
+            批量获取 Token 失败：{provisionAllMutation.error.message}
+          </p>
+        )}
+        {provisionResult && (
+          <div className="mt-4 rounded-(--radius-input) border border-(--color-border) bg-(--color-surface-2) p-3">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+              <span className="text-(--color-muted)">
+                共 {provisionResult.total} 个 · 成功{" "}
+                <span className="font-semibold text-(--color-success)">{provisionResult.success}</span> ·
+                失败 <span className="font-semibold text-(--color-warning)">{provisionResult.failed}</span>
+              </span>
+              {provisionResult.failed > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setProvisionDetailOpen((prev) => !prev)}
+                  className="rounded-full border border-(--color-border) px-3 py-1 text-xs text-(--color-muted) transition-colors hover:border-(--color-border-strong) hover:text-(--color-text)"
+                >
+                  {provisionDetailOpen ? "收起失败原因" : "展开失败原因"}
+                </button>
+              )}
+            </div>
+            {provisionDetailOpen && (
+              <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-xs">
+                {provisionResult.items.map((item) => (
+                  <li key={item.id} className="flex items-center gap-2">
+                    <span className={item.ok ? "text-(--color-success)" : "text-(--color-warning)"}>
+                      {item.ok ? "成功" : "失败"}
+                    </span>
+                    <span className="truncate text-(--color-muted)">{item.username}</span>
+                    {!item.ok && item.error && (
+                      <span className="truncate text-(--color-muted-2)" title={item.error}>
+                        {item.error}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
         <div className="mt-6 flex flex-wrap items-center gap-3">
           <div className="w-56">
@@ -206,6 +294,22 @@ export default function Accounts() {
             className="inline-flex h-9 items-center rounded-full border border-(--color-border) bg-(--color-surface-1) px-4 text-sm transition-colors hover:border-(--color-border-strong) disabled:cursor-not-allowed disabled:opacity-50"
           >
             批量导入
+          </button>
+          <button
+            type="button"
+            disabled={selectedIds.length === 0 || provisionAllMutation.isPending}
+            onClick={runProvisionAll}
+            className="inline-flex h-9 items-center rounded-full border border-(--color-border) bg-(--color-surface-1) px-4 text-sm transition-colors hover:border-(--color-border-strong) disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {provisionAllMutation.isPending ? "获取中…" : `批量获取 Token（${selectedIds.length}）`}
+          </button>
+          <button
+            type="button"
+            disabled={selectedIds.length === 0}
+            onClick={() => setBatchDeleteOpen(true)}
+            className="inline-flex h-9 items-center rounded-full border border-(--color-border) bg-(--color-surface-1) px-4 text-sm text-(--color-muted) transition-colors hover:border-(--color-warning)/50 hover:text-(--color-warning) disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {`批量删除（${selectedIds.length}）`}
           </button>
         </div>
 
@@ -233,6 +337,18 @@ export default function Accounts() {
                 <table className="w-full min-w-[860px] border-collapse text-sm">
                   <thead>
                     <tr className="border-b border-(--color-border) text-left text-xs text-(--color-muted-2)">
+                      <th className="w-10 px-4 py-3">
+                        <input
+                          type="checkbox"
+                          aria-label="全选账号"
+                          checked={allSelected}
+                          ref={(el) => {
+                            if (el) el.indeterminate = someSelected;
+                          }}
+                          onChange={toggleAll}
+                          className="size-4 cursor-pointer accent-(--color-primary)"
+                        />
+                      </th>
                       <th className="px-4 py-3 font-medium">账号</th>
                       <th className="px-4 py-3 font-medium">上游</th>
                       <th className="px-4 py-3 font-medium">状态</th>
@@ -255,6 +371,15 @@ export default function Accounts() {
                         provisionMutation.isPending && provisionMutation.variables === account.id;
                       return (
                         <tr key={account.id} className="border-b border-(--color-border) last:border-b-0">
+                          <td className="px-4 py-3">
+                            <input
+                              type="checkbox"
+                              aria-label={`选择账号 ${account.label || account.username}`}
+                              checked={selected.has(account.id)}
+                              onChange={() => toggleOne(account.id)}
+                              className="size-4 cursor-pointer accent-(--color-primary)"
+                            />
+                          </td>
                           <td className="px-4 py-3">
                             <div className="font-medium">{account.label || account.username}</div>
                             <div className="text-xs text-(--color-muted-2)">{account.username}</div>
@@ -371,6 +496,23 @@ export default function Accounts() {
           if (!deleteTarget) return;
           deleteMutation.mutate(deleteTarget.id, {
             onSuccess: () => setDeleteTarget(null)
+          });
+        }}
+      />
+
+      <ConfirmDialog
+        open={batchDeleteOpen}
+        onOpenChange={setBatchDeleteOpen}
+        title="批量删除账号？"
+        description={`将删除选中的 ${selectedIds.length} 个账号，此操作无法恢复。`}
+        confirmLabel="删除"
+        pending={batchDeleteMutation.isPending}
+        onConfirm={() => {
+          batchDeleteMutation.mutate(selectedIds, {
+            onSuccess: () => {
+              setSelected(new Set());
+              setBatchDeleteOpen(false);
+            }
           });
         }}
       />

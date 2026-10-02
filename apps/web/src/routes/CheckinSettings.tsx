@@ -8,8 +8,14 @@ import {
   inputClass
 } from "../components/console-ui";
 import { useAccounts } from "../hooks/useAccounts";
-import { useCheckinSettings, useRunCheckinTest, useUpdateCheckinSettings } from "../hooks/useCheckin";
-import type { CheckinResult } from "../lib/api";
+import {
+  useCheckinAccount,
+  useCheckinSettings,
+  useRunCheckinTest,
+  useUpdateCheckinSettings
+} from "../hooks/useCheckin";
+import { useUpstreams } from "../hooks/useUpstreams";
+import type { AccountPublic, CheckinResult } from "../lib/api";
 
 const STATUS_LABELS: Record<string, string> = {
   success: "成功",
@@ -23,11 +29,27 @@ function statusLabel(status: string): string {
   return STATUS_LABELS[status] ?? status;
 }
 
+const ACCOUNT_STATUS_LABELS: Record<string, string> = {
+  pending: "等待",
+  active: "正常",
+  success: "正常",
+  retry: "重试中",
+  jwt_expired: "JWT 过期",
+  manual_required: "需人工",
+  cooling: "冷却中"
+};
+
+function accountStatusLabel(status: string): string {
+  return ACCOUNT_STATUS_LABELS[status] ?? status;
+}
+
 export default function CheckinSettings() {
   const settingsQuery = useCheckinSettings();
   const accountsQuery = useAccounts();
+  const upstreamsQuery = useUpstreams();
   const updateMutation = useUpdateCheckinSettings();
   const testMutation = useRunCheckinTest();
+  const checkinOneMutation = useCheckinAccount();
 
   const accountNames = useMemo(() => {
     const map = new Map<string, string>();
@@ -36,6 +58,32 @@ export default function CheckinSettings() {
     }
     return map;
   }, [accountsQuery.data]);
+
+  const accounts = accountsQuery.data?.items ?? [];
+  const upstreams = upstreamsQuery.data?.items ?? [];
+
+  const groups = useMemo(() => {
+    const order: string[] = [];
+    const byId = new Map<string, AccountPublic[]>();
+    for (const upstream of upstreams) {
+      if (!byId.has(upstream.id)) {
+        byId.set(upstream.id, []);
+        order.push(upstream.id);
+      }
+    }
+    for (const account of accounts) {
+      if (!byId.has(account.upstream_id)) {
+        byId.set(account.upstream_id, []);
+        order.push(account.upstream_id);
+      }
+      byId.get(account.upstream_id)!.push(account);
+    }
+    return order.map((id) => ({
+      id,
+      name: upstreams.find((upstream) => upstream.id === id)?.name || id,
+      accounts: byId.get(id) ?? []
+    }));
+  }, [accounts, upstreams]);
 
   const settings = settingsQuery.data;
 
@@ -185,6 +233,105 @@ export default function CheckinSettings() {
                   </div>
                 </dl>
               ) : null}
+            </section>
+
+            <section className="rounded-(--radius-card) border border-(--color-border) bg-(--color-surface-1) p-6 shadow-(--shadow-card)">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-sm font-medium">账号池（按上游分组）</h2>
+                <span className="text-xs text-(--color-muted-2)">共 {accounts.length} 个账号</span>
+              </div>
+
+              {accountsQuery.isLoading || upstreamsQuery.isLoading ? (
+                <p className="mt-3 text-sm text-(--color-muted-2)">加载中…</p>
+              ) : accountsQuery.isError ? (
+                <p className="mt-3 text-sm text-(--color-warning)">
+                  加载账号失败：{accountsQuery.error.message}
+                </p>
+              ) : accounts.length === 0 ? (
+                <p className="mt-3 text-sm text-(--color-muted-2)">还没有账号。</p>
+              ) : (
+                <div className="mt-4 flex flex-col gap-5">
+                  {groups.map((group) => (
+                    <div key={group.id}>
+                      <div className="flex items-center justify-between border-b border-(--color-border) pb-2">
+                        <h3 className="text-sm font-medium text-(--color-text)">{group.name}</h3>
+                        <span className="text-xs text-(--color-muted-2)">
+                          {group.accounts.length} 个账号
+                        </span>
+                      </div>
+                      {group.accounts.length === 0 ? (
+                        <p className="mt-2 text-xs text-(--color-muted-2)">该上游暂无账号。</p>
+                      ) : (
+                        <ul className="mt-2 flex flex-col divide-y divide-(--color-border)">
+                          {group.accounts.map((account) => {
+                            const pending =
+                              checkinOneMutation.isPending &&
+                              checkinOneMutation.variables === account.id;
+                            const result =
+                              checkinOneMutation.data?.account_id === account.id
+                                ? checkinOneMutation.data
+                                : null;
+                            const error =
+                              checkinOneMutation.isError &&
+                              checkinOneMutation.variables === account.id
+                                ? checkinOneMutation.error.message
+                                : null;
+                            return (
+                              <li
+                                key={account.id}
+                                className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3 text-sm"
+                              >
+                                <span className="min-w-0 flex-1 truncate font-medium">
+                                  {account.label || account.username}
+                                </span>
+                                <span className="text-xs text-(--color-muted)">
+                                  {accountStatusLabel(account.status)}
+                                </span>
+                                <span className="text-xs tabular-nums text-(--color-muted)">
+                                  Gems {account.gems_last ?? "—"}
+                                </span>
+                                <span
+                                  className={`rounded-full border px-2 py-0.5 text-[11px] ${
+                                    account.has_api_token
+                                      ? "border-(--color-border) text-(--color-muted)"
+                                      : "border-(--color-warning)/50 bg-(--color-warning)/10 font-medium text-(--color-warning)"
+                                  }`}
+                                >
+                                  {account.has_api_token ? "Token" : "缺 Token"}
+                                </span>
+                                {result && (
+                                  <span
+                                    className={`max-w-52 truncate text-xs ${
+                                      result.ok ? "text-(--color-success)" : "text-(--color-warning)"
+                                    }`}
+                                    title={result.message}
+                                  >
+                                    {result.ok ? "成功" : "失败"} · {statusLabel(result.status)} ·{" "}
+                                    {result.message}
+                                  </span>
+                                )}
+                                {error && (
+                                  <span className="max-w-52 truncate text-xs text-(--color-warning)" title={error}>
+                                    {error}
+                                  </span>
+                                )}
+                                <button
+                                  type="button"
+                                  disabled={pending}
+                                  onClick={() => checkinOneMutation.mutate(account.id)}
+                                  className="rounded-full border border-(--color-border) px-3 py-1 text-xs text-(--color-muted) transition-colors hover:border-(--color-border-strong) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {pending ? "签到中…" : "单独签到"}
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </section>
 
             <section className="rounded-(--radius-card) border border-(--color-border) bg-(--color-surface-1) p-6 shadow-(--shadow-card)">

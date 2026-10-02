@@ -248,6 +248,31 @@ export interface ProvisionTokenResult {
   has_api_token: boolean;
 }
 
+export interface ProvisionAllAccountTokensBody {
+  ids?: string[];
+  upstream_id?: string;
+}
+
+export interface ProvisionAllResultItem {
+  id: string;
+  username: string;
+  ok: boolean;
+  has_api_token: boolean;
+  error?: string;
+}
+
+export interface ProvisionAllResult {
+  total: number;
+  success: number;
+  failed: number;
+  items: ProvisionAllResultItem[];
+}
+
+export interface BatchDeleteAccountsResult {
+  deleted: number;
+  items: Array<{ id: string; ok: boolean; error?: string }>;
+}
+
 export interface AccountListResponse {
   items: AccountPublic[];
   total_gems: number;
@@ -362,6 +387,22 @@ export function refreshAllGems(): Promise<RefreshAllResult> {
 export function provisionAccountToken(id: string): Promise<ProvisionTokenResult> {
   return apiFetch<ProvisionTokenResult>(`/api/accounts/${encodeURIComponent(id)}/provision_token`, {
     method: "POST"
+  });
+}
+
+export function provisionAllAccountTokens(
+  body: ProvisionAllAccountTokensBody
+): Promise<ProvisionAllResult> {
+  return apiFetch<ProvisionAllResult>("/api/accounts/provision_all", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+export function batchDeleteAccounts(ids: string[]): Promise<BatchDeleteAccountsResult> {
+  return apiFetch<BatchDeleteAccountsResult>("/api/accounts/batch_delete", {
+    method: "POST",
+    body: JSON.stringify({ ids })
   });
 }
 
