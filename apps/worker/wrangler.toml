@@ -31,7 +31,7 @@ run_worker_first = [
 # 通过 `wrangler secret put` / `wrangler secret bulk` 写入，不写进本文件。
 [vars]
 APP_ENV = "production"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 
 # D1：会话元数据、上游配置、API Key、配额与生成记录。
 [[d1_databases]]
