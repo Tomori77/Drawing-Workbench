@@ -7,9 +7,9 @@
     "dev": "pnpm -r --parallel dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "deploy": "pnpm -r build && node scripts/wrangler-noproxy.mjs deploy",
-    "deploy:dry": "pnpm -r build && node scripts/wrangler-noproxy.mjs deploy --dry-run",
-    "cf": "node scripts/wrangler-noproxy.mjs"
+    "deploy": "pnpm -r build && node scripts/wrangler-cf.mjs deploy",
+    "deploy:dry": "pnpm -r build && node scripts/wrangler-cf.mjs deploy --dry-run",
+    "cf": "node scripts/wrangler-cf.mjs"
   },
   "devDependencies": {
     "typescript": "^5.7.0",
