@@ -16,7 +16,17 @@ import {
   usePresets,
   useUpdatePreset
 } from "../hooks/usePresets";
-import type { GalleryMeta, GenerateImage, GenerateParams, Preset } from "../lib/api";
+import { useAuth } from "../hooks/useAuth";
+import { useGenerateOptions, useUpdateGenerateOptions } from "../hooks/useGenerateOptions";
+import type {
+  AccountMode,
+  GalleryMeta,
+  GenerateImage,
+  GenerateParams,
+  Preset,
+  SizeOption
+} from "../lib/api";
+import { ApiError } from "../lib/api";
 import { DialogActions, DialogShell, inputClass } from "../components/console-ui";
 import {
   actionTabs,
@@ -25,6 +35,11 @@ import {
   noiseScheduleOptions,
   samplerOptions
 } from "../lib/mock";
+import {
+  hasPersistedPlaygroundForm,
+  usePlaygroundForm,
+  type CustomSize
+} from "../lib/playgroundForm";
 
 interface SelectMenuProps {
   value: string;
@@ -405,30 +420,158 @@ function ArtistManagerDialog({
 export default function Playground() {
   const location = useLocation();
   const navigate = useNavigate();
-  const [model, setModel] = useState(modelOptions[0].value);
-  const [action, setAction] = useState(actionTabs[0].value);
-  const [sizeIndex, setSizeIndex] = useState(0);
-  const [sampler, setSampler] = useState(samplerOptions[0].value);
-  const [schedule, setSchedule] = useState(noiseScheduleOptions[0].value);
-  const [steps, setSteps] = useState(28);
-  const [guidance, setGuidance] = useState(5);
-  const [seed, setSeed] = useState("");
-  const [prompt, setPrompt] = useState("");
-  const [negative, setNegative] = useState("");
+  // 创作台表单通过 localStorage 持久化；刷新/再次进入时沿用上次填写。
+  const formStore = usePlaygroundForm();
+  const {
+    model,
+    action,
+    sizeIndex,
+    customSize,
+    sampler,
+    schedule,
+    steps,
+    guidance,
+    seed,
+    prompt,
+    negative,
+    artistContent,
+    upstreamId,
+    accountMode,
+    accountId,
+    recipeSelect,
+    artistSelect
+  } = formStore;
+  const patchForm = formStore.patch;
+  const setModel = (value: string) => patchForm({ model: value });
+  const setAction = (value: string) => patchForm({ action: value });
+  const setSizeIndex = (value: number) => patchForm({ sizeIndex: value });
+  const setCustomSize = (value: CustomSize | null) => patchForm({ customSize: value });
+  const setSampler = (value: string) => patchForm({ sampler: value });
+  const setSchedule = (value: string) => patchForm({ schedule: value });
+  const setSteps = (value: number) => patchForm({ steps: value });
+  const setGuidance = (value: number) => patchForm({ guidance: value });
+  const setSeed = (value: string) => patchForm({ seed: value });
+  const setPrompt = (value: string) => patchForm({ prompt: value });
+  const setNegative = (value: string) => patchForm({ negative: value });
+  const setArtistContent = (value: string) => patchForm({ artistContent: value });
+  const setUpstreamId = (value: string | undefined) => patchForm({ upstreamId: value });
+  const setAccountMode = (value: AccountMode) => patchForm({ accountMode: value });
+  const setAccountId = (value: string) => patchForm({ accountId: value });
+  const setRecipeSelect = (value: string) => patchForm({ recipeSelect: value });
+  const setArtistSelect = (value: string) => patchForm({ artistSelect: value });
+
   const [promptTab, setPromptTab] = useState<PromptTab>("positive");
   const [sessionImages, setSessionImages] = useState<GenerateImage[]>([]);
   const [lightbox, setLightbox] = useState<GenerateImage | null>(null);
   const [mobileParamsOpen, setMobileParamsOpen] = useState(false);
 
-  const [artistContent, setArtistContent] = useState("");
+  // 初次进入时是否已有本地缓存：有缓存则缓存优先于远端设置。
+  const hadPersistedFormRef = useRef<boolean | null>(null);
+  if (hadPersistedFormRef.current === null) {
+    hadPersistedFormRef.current = hasPersistedPlaygroundForm();
+  }
+  const hadPersistedForm = hadPersistedFormRef.current;
+
+  // 上游与账号使用方式（随 generate/options 动态变化）。
+  const authQuery = useAuth();
+  const isOwner = authQuery.data?.role === "owner";
+  const optionsQuery = useGenerateOptions(upstreamId);
+  const updateOptions = useUpdateGenerateOptions();
+  const options = optionsQuery.data;
+  const upstreams = options?.upstreams ?? [];
+  const settings = options?.settings;
+
+  // 本地选择优先于远端设置，保证切换后立即反映；否则回退到远端设置/首个上游。
+  const effectiveUpstreamId = upstreamId ?? settings?.upstream_id ?? undefined;
+  const activeUpstream =
+    upstreams.find((item) => item.id === effectiveUpstreamId) ?? upstreams[0];
+
+  const modelList = activeUpstream?.models.length
+    ? activeUpstream.models
+    : modelOptions.map((item) => item.value);
+  const samplerList = activeUpstream?.samplers.length
+    ? activeUpstream.samplers
+    : samplerOptions.map((item) => item.value);
+  const scheduleList = activeUpstream?.noise_schedules.length
+    ? activeUpstream.noise_schedules
+    : noiseScheduleOptions.map((item) => item.value);
+  const actionList: { value: string; label: string }[] = activeUpstream?.actions.length
+    ? activeUpstream.actions
+    : actionTabs;
+  const sizeList: SizeOption[] = activeUpstream?.sizes.length
+    ? activeUpstream.sizes
+    : canvasSizes.map((item) => ({
+        label: item.label,
+        width: item.width,
+        height: item.height,
+        ratio: item.ratio
+      }));
+
+  const modelMenuOptions = modelList.map((value) => ({
+    value,
+    label: modelOptions.find((item) => item.value === value)?.label ?? value
+  }));
+  const samplerMenuOptions = samplerList.map((value) => ({
+    value,
+    label: samplerOptions.find((item) => item.value === value)?.label ?? value
+  }));
+  const scheduleMenuOptions = scheduleList.map((value) => ({
+    value,
+    label: noiseScheduleOptions.find((item) => item.value === value)?.label ?? value
+  }));
+  const accountModes = (options?.account_modes ?? []).filter(
+    (item) => isOwner || item.value !== "fixed"
+  );
+  const accountList = options?.accounts ?? [];
+
+  const sizeRatio = (option: SizeOption) =>
+    option.ratio ?? `${option.width}×${option.height}`;
+
+  // 上游切换或选项刷新后，把越界选择收敛到合法值，避免残留 502 采样器等。
+  useEffect(() => {
+    if (!activeUpstream) return;
+    if (!modelList.includes(model)) setModel(modelList[0]);
+    if (!samplerList.includes(sampler)) setSampler(samplerList[0]);
+    if (!scheduleList.includes(schedule)) setSchedule(scheduleList[0]);
+    if (!actionList.some((item) => item.value === action)) setAction(actionList[0].value);
+    if (sizeIndex >= sizeList.length) setSizeIndex(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeUpstream, modelList, samplerList, scheduleList, actionList, sizeList]);
+
+  // 远端设置回填账号模式（PATCH 成功后刷新会保持一致）。
+  // 有本地缓存时以缓存为准，仅在无缓存（首次使用）时回填远端默认。
+  useEffect(() => {
+    if (!settings) return;
+    if (hadPersistedForm) return;
+    if (settings.account_mode) setAccountMode(settings.account_mode);
+    setAccountId(settings.account_id ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings?.account_mode, settings?.account_id]);
+
+  // 缓存的上游可能已被删除/停用：收敛到当前可用上游并写回缓存。
+  useEffect(() => {
+    if (!activeUpstream) return;
+    if (effectiveUpstreamId !== activeUpstream.id) setUpstreamId(activeUpstream.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeUpstream?.id, effectiveUpstreamId]);
+
+  // 固定账号时，若所选账号不在当前上游（切换上游后残留），回退到首个可用账号。
+  useEffect(() => {
+    if (!isOwner || accountMode !== "fixed") return;
+    if (accountList.length === 0) return;
+    if (!accountList.some((item) => item.id === accountId)) setAccountId(accountList[0].id);
+  }, [isOwner, accountMode, accountList, accountId]);
+
+  // 非 owner 不支持固定账号（无账号下拉，后端也拒绝指定账号）。
+  useEffect(() => {
+    if (!isOwner && accountMode === "fixed") setAccountMode("auto");
+  }, [isOwner, accountMode]);
 
   const recipeQuery = usePresets("recipe");
   const artistQuery = usePresets("artist");
   const recipes = recipeQuery.data?.items ?? [];
   const artists = artistQuery.data?.items ?? [];
 
-  const [recipeSelect, setRecipeSelect] = useState("");
-  const [artistSelect, setArtistSelect] = useState("");
   const [recipeDialogOpen, setRecipeDialogOpen] = useState(false);
   const [artistDialogOpen, setArtistDialogOpen] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
@@ -440,10 +583,11 @@ export default function Playground() {
   const deleteArtist = useDeletePreset("artist");
   const createArtist = useCreatePreset("artist");
 
-  const preset = canvasSizes[sizeIndex];
-  const [customSize, setCustomSize] = useState<{ width: number; height: number } | null>(null);
+  const preset = sizeList[sizeIndex] ?? sizeList[0];
   const canvas = customSize ?? preset;
-  const canvasRatio = customSize ? `${customSize.width}×${customSize.height}` : preset.ratio;
+  const canvasRatio = customSize
+    ? `${customSize.width}×${customSize.height}`
+    : sizeRatio(preset);
   const generateMutation = useGenerate();
   const galleryQuery = useGallery();
   const historyItems = useMemo(
@@ -473,24 +617,28 @@ export default function Playground() {
     }
   });
 
-  // 把配方快照灌回全部 state。
+  // 把配方快照灌回全部 state；越界值收敛到当前上游合法选项。
   const applyRecipe = (preset: Preset) => {
     const p = preset.payload as Partial<GenerateParams> | undefined;
     if (!p) return;
-    if (p.model) setModel(p.model);
-    if (p.action) setAction(p.action);
+    if (p.model) setModel(modelList.includes(p.model) ? p.model : modelList[0]);
+    if (p.action) {
+      setAction(actionList.some((item) => item.value === p.action) ? p.action : actionList[0].value);
+    }
     if (typeof p.prompt === "string") setPrompt(p.prompt);
     if (typeof p.negative_prompt === "string") setNegative(p.negative_prompt);
     const params: Partial<GenerateParams["parameters"]> = p.parameters ?? {};
-    if (params.sampler) setSampler(params.sampler);
-    if (params.noise_schedule) setSchedule(params.noise_schedule);
+    if (params.sampler) setSampler(samplerList.includes(params.sampler) ? params.sampler : samplerList[0]);
+    if (params.noise_schedule) {
+      setSchedule(scheduleList.includes(params.noise_schedule) ? params.noise_schedule : scheduleList[0]);
+    }
     if (params.steps !== undefined) setSteps(Math.round(asParamNumber(params.steps, 28)));
     if (params.scale !== undefined) setGuidance(asParamNumber(params.scale, 5));
     if (params.seed !== undefined) setSeed(String(params.seed));
     const width = asParamNumber(params.width, NaN);
     const height = asParamNumber(params.height, NaN);
     if (Number.isFinite(width) && Number.isFinite(height)) {
-      const presetIndex = canvasSizes.findIndex((s) => s.width === width && s.height === height);
+      const presetIndex = sizeList.findIndex((s) => s.width === width && s.height === height);
       if (presetIndex >= 0) {
         setCustomSize(null);
         setSizeIndex(presetIndex);
@@ -540,7 +688,10 @@ export default function Playground() {
         sampler,
         noise_schedule: schedule,
         ...(artistContent ? { artist: artistContent } : {})
-      }
+      },
+      ...(activeUpstream ? { upstream_id: activeUpstream.id } : {}),
+      account_mode: accountMode,
+      ...(isOwner && accountMode === "fixed" && accountId ? { account_id: accountId } : {})
     };
     generateMutation.mutate(body, {
       onSuccess: (result) => {
@@ -561,8 +712,10 @@ export default function Playground() {
     reproducedRef.current = incoming.id;
 
     const params = incoming.params ?? {};
-    if (incoming.model) setModel(incoming.model);
-    if (incoming.action) setAction(incoming.action);
+    if (incoming.model) setModel(modelList.includes(incoming.model) ? incoming.model : modelList[0]);
+    if (incoming.action) {
+      setAction(actionList.some((item) => item.value === incoming.action) ? incoming.action : actionList[0].value);
+    }
     const incomingArtist = asParamString(params.artist, "");
     if (incomingArtist) {
       setArtistContent(incomingArtist);
@@ -579,9 +732,11 @@ export default function Playground() {
     if (incoming.prompt.negative) setNegative(incoming.prompt.negative);
 
     const incomingSampler = asParamString(params.sampler, "");
-    if (incomingSampler) setSampler(incomingSampler);
+    if (incomingSampler) setSampler(samplerList.includes(incomingSampler) ? incomingSampler : samplerList[0]);
     const incomingSchedule = asParamString(params.noise_schedule, "");
-    if (incomingSchedule) setSchedule(incomingSchedule);
+    if (incomingSchedule) {
+      setSchedule(scheduleList.includes(incomingSchedule) ? incomingSchedule : scheduleList[0]);
+    }
     if (params.steps !== undefined && params.steps !== null) setSteps(Math.round(asParamNumber(params.steps, 28)));
     if (params.scale !== undefined && params.scale !== null) setGuidance(asParamNumber(params.scale, 5));
     if (params.seed !== undefined && params.seed !== null) setSeed(String(params.seed));
@@ -589,7 +744,7 @@ export default function Playground() {
     const width = asParamNumber(incoming.width ?? params.width, NaN);
     const height = asParamNumber(incoming.height ?? params.height, NaN);
     if (Number.isFinite(width) && Number.isFinite(height)) {
-      const presetIndex = canvasSizes.findIndex((s) => s.width === width && s.height === height);
+      const presetIndex = sizeList.findIndex((s) => s.width === width && s.height === height);
       if (presetIndex >= 0) {
         setCustomSize(null);
         setSizeIndex(presetIndex);
@@ -615,11 +770,59 @@ export default function Playground() {
   const errorMessage = generateMutation.error
     ? generateMutation.error.message
     : null;
+  const errorAttempts =
+    generateMutation.error instanceof ApiError ? generateMutation.error.attemptsDetail : [];
 
   const displayImages = sessionImages.length > 0 ? sessionImages : generateMutation.data?.images ?? [];
 
   const renderParamsBody = () => (
     <div className="flex-1 overflow-y-auto">
+      <PanelSection title="上游" meta={activeUpstream?.type}>
+        <Field label="上游">
+          <SelectMenu
+            ariaLabel="上游"
+            value={activeUpstream?.id ?? ""}
+            options={upstreams.map((item) => ({ value: item.id, label: item.name }))}
+            onChange={(value) => {
+              setUpstreamId(value);
+              setCustomSize(null);
+              updateOptions.mutate({ upstream_id: value });
+            }}
+          />
+        </Field>
+        <Field label="账号使用方式">
+          <SelectMenu
+            ariaLabel="账号使用方式"
+            value={accountMode}
+            options={accountModes.map((item) => ({ value: item.value, label: item.label }))}
+            onChange={(value) => {
+              const mode = value as AccountMode;
+              setAccountMode(mode);
+              updateOptions.mutate({ account_mode: mode });
+            }}
+          />
+        </Field>
+        {isOwner && accountMode === "fixed" && (
+          <Field label="固定账号">
+            <SelectMenu
+              ariaLabel="固定账号"
+              value={accountId}
+              options={(options?.accounts ?? []).map((item) => ({
+                value: item.id,
+                label: `${item.label || item.username}${item.enabled ? "" : "（停用）"}`
+              }))}
+              onChange={(value) => {
+                setAccountId(value);
+                updateOptions.mutate({ account_id: value });
+              }}
+            />
+          </Field>
+        )}
+        {updateOptions.isError && (
+          <p className="text-xs text-(--color-warning)">设置保存失败：{updateOptions.error.message}</p>
+        )}
+      </PanelSection>
+
       <PanelSection title="配方" meta="参数快照">
         <Field label="配方">
           <select
@@ -718,11 +921,11 @@ export default function Playground() {
 
       <PanelSection title="模型">
         <Field label="模型">
-          <SelectMenu ariaLabel="模型" value={model} options={modelOptions} onChange={setModel} />
+          <SelectMenu ariaLabel="模型" value={model} options={modelMenuOptions} onChange={setModel} />
         </Field>
         <Tabs.Root value={action} onValueChange={setAction}>
           <Tabs.List className="grid grid-cols-3 gap-1 rounded-(--radius-input) bg-(--color-surface-2) p-1">
-            {actionTabs.map((tab) => (
+            {actionList.map((tab) => (
               <Tabs.Trigger
                 key={tab.value}
                 value={tab.value}
@@ -737,11 +940,11 @@ export default function Playground() {
 
       <PanelSection title="画布" meta={canvasRatio}>
         <div className="grid grid-cols-2 gap-2">
-          {canvasSizes.map((option, index) => {
+          {sizeList.map((option, index) => {
             const active = !customSize && index === sizeIndex;
             return (
               <button
-                key={option.ratio}
+                key={`${option.width}x${option.height}`}
                 type="button"
                 aria-pressed={active}
                 onClick={() => {
@@ -755,7 +958,7 @@ export default function Playground() {
                 }`}
               >
                 <span>{option.label}</span>
-                <span className="text-[11px] text-(--color-muted-2)">{option.ratio}</span>
+                <span className="text-[11px] text-(--color-muted-2)">{sizeRatio(option)}</span>
               </button>
             );
           })}
@@ -772,7 +975,7 @@ export default function Playground() {
           <SelectMenu
             ariaLabel="采样器"
             value={sampler}
-            options={samplerOptions}
+            options={samplerMenuOptions}
             onChange={setSampler}
           />
         </Field>
@@ -780,7 +983,7 @@ export default function Playground() {
           <SelectMenu
             ariaLabel="噪声调度"
             value={schedule}
-            options={noiseScheduleOptions}
+            options={scheduleMenuOptions}
             onChange={setSchedule}
           />
         </Field>
@@ -870,7 +1073,19 @@ export default function Playground() {
             ) : errorMessage ? (
               <div className="max-w-md rounded-(--radius-card) border border-(--color-warning)/40 bg-(--color-surface-1) p-6 text-center shadow-(--shadow-card)">
                 <p className="text-sm font-medium text-(--color-warning)">生成失败</p>
-                <p className="mt-2 text-sm text-(--color-muted)">{errorMessage}</p>
+                <p className="mt-2 max-h-[40dvh] overflow-y-auto text-left text-sm break-words whitespace-pre-wrap text-(--color-muted)">
+                  {errorMessage}
+                </p>
+                {errorAttempts.length > 0 && (
+                  <ul className="mt-3 space-y-1 border-t border-(--color-border) pt-3 text-left text-[11px] text-(--color-muted-2)">
+                    {errorAttempts.map((attempt) => (
+                      <li key={attempt.attempt_no} className="break-words whitespace-pre-wrap">
+                        #{attempt.attempt_no} · {attempt.status_code ?? "—"}
+                        {attempt.error ? ` · ${attempt.error}` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             ) : displayImages.length > 0 ? (
               <div
@@ -992,7 +1207,7 @@ export default function Playground() {
               </div>
             </div>
             {errorMessage && (
-              <p className="border-t border-(--color-border) px-4 py-2 text-xs text-(--color-warning)">
+              <p className="max-h-32 overflow-y-auto border-t border-(--color-border) px-4 py-2 text-xs break-words whitespace-pre-wrap text-(--color-warning)">
                 {errorMessage}
               </p>
             )}

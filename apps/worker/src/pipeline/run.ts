@@ -9,7 +9,7 @@ import { applyRules, loadRules, RewriteBlockedError } from "../rewrite/engine";
 import type { RewriteRule } from "../rewrite/types";
 import { newId } from "../lib/ids";
 import { nowIso } from "../lib/time";
-import { truncateLog } from "../lib/log";
+import { truncateLog, clientMessage } from "../lib/log";
 import {
   type Adapter,
   type CanonicalRequest,
@@ -142,7 +142,7 @@ async function parseAttempt(
         ok: false,
         status: resp.status,
         error: {
-          message: truncateLog(text || resp.statusText || "upstream_error"),
+          message: clientMessage(text || resp.statusText || "upstream_error"),
           code: "UPSTREAM_ERROR",
           status: resp.status,
           retryable: resp.status === 401 || resp.status === 402 || resp.status === 429 || resp.status >= 500
@@ -200,7 +200,7 @@ async function executeAttempt(
       result: {
         ok: false,
         error: {
-          message: aborted ? "upstream_timeout" : truncateLog(message),
+          message: aborted ? "upstream_timeout" : clientMessage(message),
           code: aborted ? "UPSTREAM_TIMEOUT" : "UPSTREAM_CONNECT",
           retryable: true
         }
@@ -458,7 +458,7 @@ export async function runPipeline(
     ok: false,
     status: 502,
     error: {
-      message: truncateLog(lastMessage || "all_accounts_failed"),
+      message: clientMessage(lastMessage || "all_accounts_failed"),
       code: "ALL_ACCOUNTS_FAILED",
       status: 502,
       retryable: false

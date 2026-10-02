@@ -249,4 +249,35 @@ section("4. missing JWT -> semantic error");
   check("no upstream request attempted", fetchLog.filter((f) => f.url.includes("nai-nojwt.example")).length === 0);
 }
 
+/* ================= 5. 已有 key 复用（默认不新建） ================= */
+section("5. reuse existing api token unless forced");
+{
+  const up = await mod.createUpstream(env, {
+    name: "nai-reuse",
+    type: "nai-compatible",
+    base_url: "https://nai-reuse.example"
+  });
+  const acc = await mod.createAccount(env, {
+    upstream_id: up.id,
+    username: "reuse",
+    jwt: "jwt-reuse",
+    apiToken: "ynai-existing"
+  });
+  const fetchImpl = makeFetch((url) => {
+    if (url.includes("/api/ynai/tokens")) return jsonResponse({ data: { token: "ynai-new" } });
+    return jsonResponse({ error: "no_route" }, 404);
+  });
+
+  const before = fetchLog.length;
+  const reused = await mod.provisionToken(env, acc, up, fetchImpl);
+  check("default reuses existing token", reused === "ynai-existing");
+  check("reuse makes no upstream request", fetchLog.length === before);
+
+  const forced = await mod.provisionToken(env, acc, up, fetchImpl, undefined, { force: true });
+  check("force creates new token", forced === "ynai-new");
+  check("force hits /api/ynai/tokens", fetchLog.at(-1).url.endsWith("/api/ynai/tokens"));
+  const secret = await mod.getAccountSecret(env, acc.id);
+  check("force persists new token", secret.apiToken === "ynai-new");
+}
+
 console.log(`\nselftest-provision: ${passed} checks passed`);

@@ -39,18 +39,16 @@ export interface UpstreamOptions {
   actions: ActionOption[];
 }
 
+// 与参考项目对齐：仅保留上游稳定返回 200 的 7 个采样器。
+// 注意：k_dpmpp_2m_sde 会触发上游整站 502，禁止加入。
 const NAI_SAMPLERS = [
   "k_euler_ancestral",
   "k_euler",
-  "k_dpmpp_2m",
-  "k_dpmpp_2m_sde",
-  "k_dpmpp_sde",
-  "ddim",
   "k_dpm_2",
   "k_dpm_2_ancestral",
-  "k_heun",
-  "k_lms",
-  "plms"
+  "k_dpmpp_2s_ancestral",
+  "k_dpmpp_2m",
+  "k_dpmpp_sde"
 ];
 
 const NAI_NOISE_SCHEDULES = ["karras", "native", "exponential", "polyexponential"];

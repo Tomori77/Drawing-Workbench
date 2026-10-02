@@ -13,6 +13,10 @@ export async function setKv(env: Env, key: string, value: string): Promise<void>
     .run();
 }
 
+export async function deleteKv(env: Env, key: string): Promise<void> {
+  await env.DB.prepare("DELETE FROM runtime_kv WHERE k=?").bind(key).run();
+}
+
 export async function bumpKv(env: Env, key: string): Promise<number> {
   const row = await env.DB.prepare(
     "INSERT INTO runtime_kv(k, v) VALUES(?, '1') ON CONFLICT(k) DO UPDATE SET v=CAST(CAST(v AS INTEGER)+1 AS TEXT) RETURNING v"

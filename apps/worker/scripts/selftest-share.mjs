@@ -32,6 +32,7 @@ await writeFile(
     `export { generate, inboundToCanonical, persistGeneration } from "${abs("routes/generate.ts")}";`,
     `export { verifySharePassword, createSharePassword, listSharePasswords, updateSharePassword } from "${abs("db/sharePasswords.ts")}";`,
     `export { createUpstream } from "${abs("db/upstreams.ts")}";`,
+    `export { ensureBuiltinArtists } from "${abs("db/presets.ts")}";`,
     `export { encrypt } from "${abs("lib/crypto.ts")}";`,
     `export { verifySession, SESSION_COOKIE } from "${abs("lib/session.ts")}";`
   ].join("\n")
@@ -91,7 +92,8 @@ async function applyMigrations(db) {
     "0003_checkin.sql",
     "0004_profile.sql",
     "0005_account_usage.sql",
-    "0006_share_passwords.sql"
+    "0006_share_passwords.sql",
+    "0007_presets.sql"
   ]) {
     const sql = await readFile(path.join(here, "..", "migrations", name), "utf8");
     db.exec(sql);
@@ -420,6 +422,44 @@ section("6. GET /api/gallery/overview");
 
   const friendRes = await req("GET", "http://localhost/api/gallery/overview", undefined, jsonHeaders("friend", null));
   check("overview forbidden for friend", friendRes.status === 403);
+}
+
+/* ================= 7. 删除分享密码级联清理预设 ================= */
+section("7. DELETE /api/share-passwords/:id 级联清理预设与种子标记");
+{
+  const created = await mod.createSharePassword(env, { label: "待删", password: "to-delete-pass" });
+  const sid = created.id;
+  await mod.ensureBuiltinArtists(env, sid);
+  await DB.prepare(
+    "INSERT INTO presets (id, owner_sid, kind, name, content, payload_json, builtin, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)"
+  )
+    .bind("cascade-recipe", sid, "recipe", "待删配方", null, "{}", 0, "2026-01-01", "2026-01-01")
+    .run();
+  const otherSid = (await mod.createSharePassword(env, { label: "保留", password: "keep-pass" })).id;
+  await DB.prepare(
+    "INSERT INTO presets (id, owner_sid, kind, name, content, payload_json, builtin, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)"
+  )
+    .bind("keep-recipe", otherSid, "recipe", "保留配方", null, "{}", 0, "2026-01-01", "2026-01-01")
+    .run();
+  const seedKey = `preset_seed:artist:${sid}`;
+  check(
+    "种子标记已写入",
+    (await DB.prepare("SELECT v FROM runtime_kv WHERE k=?").bind(seedKey).first()) !== null
+  );
+
+  const del = await req("DELETE", `http://localhost/api/share-passwords/${sid}`, undefined, jsonHeaders("owner", "owner"));
+  check("删除分享密码 200", del.status === 200);
+
+  const gone = await DB.prepare("SELECT COUNT(*) AS c FROM presets WHERE owner_sid=?").bind(sid).first();
+  check("该 sid 预设全部清除", gone.c === 0);
+  check(
+    "种子标记被删除",
+    (await DB.prepare("SELECT v FROM runtime_kv WHERE k=?").bind(seedKey).first()) === null
+  );
+  const kept = await DB.prepare("SELECT COUNT(*) AS c FROM presets WHERE owner_sid=?").bind(otherSid).first();
+  check("其他 sid 预设不受影响", kept.c >= 1);
+  const stillThere = await DB.prepare("SELECT COUNT(*) AS c FROM share_passwords WHERE id=?").bind(sid).first();
+  check("分享密码记录已删除", stillThere.c === 0);
 }
 
 console.log(`\nselftest-share: ${passed} checks passed`);

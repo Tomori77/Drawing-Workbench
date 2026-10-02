@@ -1,17 +1,27 @@
+export interface AttemptDetail {
+  account_id: string | null;
+  attempt_no: number;
+  status_code: number | null;
+  error?: string;
+}
+
 export interface ApiErrorBody {
   error?: string;
   message?: string;
+  attempts_detail?: AttemptDetail[];
 }
 
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
+  readonly attemptsDetail: AttemptDetail[];
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, attemptsDetail: AttemptDetail[] = []) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.attemptsDetail = attemptsDetail;
   }
 }
 
@@ -24,7 +34,7 @@ async function readError(res: Response): Promise<ApiError> {
   }
   const code = body.error ?? `http_${res.status}`;
   const message = body.message ?? body.error ?? `请求失败（${res.status}）`;
-  return new ApiError(res.status, code, message);
+  return new ApiError(res.status, code, message, body.attempts_detail ?? []);
 }
 
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -76,12 +86,88 @@ export interface GenerateParams {
     noise_schedule: string;
     artist?: string;
   };
+  upstream_id?: string;
+  account_mode?: AccountMode;
+  account_id?: string;
 }
 
 export function generate(body: GenerateParams): Promise<GenerateResult> {
   return apiFetch<GenerateResult>("/api/generate", {
     method: "POST",
     body: JSON.stringify(body)
+  });
+}
+
+export interface SizeOption {
+  label: string;
+  width: number;
+  height: number;
+  ratio?: string;
+}
+
+export interface ActionOption {
+  value: string;
+  label: string;
+}
+
+export interface UpstreamOptions {
+  id: string;
+  name: string;
+  type: string;
+  models: string[];
+  samplers: string[];
+  noise_schedules: string[];
+  sizes: SizeOption[];
+  actions: ActionOption[];
+}
+
+export type AccountMode = "auto" | "balance" | "fixed";
+
+export interface GenerateOptionsAccount {
+  id: string;
+  label: string | null;
+  username: string;
+  enabled: boolean;
+  status: string;
+  gems_last: number | null;
+  has_api_token: boolean;
+}
+
+export interface GenerateOptionsSettings {
+  upstream_id?: string;
+  account_mode?: AccountMode;
+  account_id?: string;
+}
+
+export interface GenerateOptionsAccountMode {
+  value: AccountMode;
+  label: string;
+}
+
+export interface GenerateOptionsResponse {
+  upstreams: UpstreamOptions[];
+  settings: GenerateOptionsSettings;
+  account_modes: GenerateOptionsAccountMode[];
+  accounts: GenerateOptionsAccount[];
+}
+
+export interface UpdateGenerateOptionsPatch {
+  upstream_id?: string;
+  account_mode?: AccountMode;
+  account_id?: string;
+}
+
+export function getGenerateOptions(upstreamId?: string): Promise<GenerateOptionsResponse> {
+  const suffix = upstreamId ? `?upstream_id=${encodeURIComponent(upstreamId)}` : "";
+  return apiFetch<GenerateOptionsResponse>(`/api/generate/options${suffix}`);
+}
+
+export function updateGenerateOptions(
+  patch: UpdateGenerateOptionsPatch
+): Promise<{ settings: GenerateOptionsSettings }> {
+  return apiFetch<{ settings: GenerateOptionsSettings }>("/api/generate/options", {
+    method: "PATCH",
+    body: JSON.stringify(patch)
   });
 }
 
@@ -362,12 +448,14 @@ export interface ProvisionAllResultItem {
   username: string;
   ok: boolean;
   has_api_token: boolean;
+  skipped?: boolean;
   error?: string;
 }
 
 export interface ProvisionAllResult {
   total: number;
   success: number;
+  skipped: number;
   failed: number;
   items: ProvisionAllResultItem[];
 }

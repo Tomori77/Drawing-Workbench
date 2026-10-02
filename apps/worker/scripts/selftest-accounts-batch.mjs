@@ -249,4 +249,40 @@ section("4. batch_delete");
   check("missing ids -> 400", missing.status === 400);
 }
 
+/* ================= 5. provision_all reuses existing keys ================= */
+section("5. provision_all skips accounts that already have api tokens");
+{
+  const up = await mod.createUpstream(env, { name: "nai-reuse", type: "nai-compatible", base_url: "https://nai-reuse.example" });
+  const hasKey = await mod.createAccount(env, { upstream_id: up.id, username: "has-key", jwt: "jwt-hk", apiToken: "existing-token" });
+  const missing = await mod.createAccount(env, { upstream_id: up.id, username: "missing", jwt: "jwt-miss" });
+
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init = {}) => {
+    calls.push({ url: String(url) });
+    if (String(url).includes("/api/ynai/tokens")) return jsonResponse({ data: { token: "tok-new" } });
+    return jsonResponse({ error: "no_route" }, 404);
+  };
+  try {
+    const res = await post("/api/accounts/provision_all", { ids: [hasKey.id, missing.id] });
+    const data = await res.json();
+    check("status 200", res.status === 200);
+    check("total=2", data.total === 2);
+    check("success=1 (only missing created)", data.success === 1);
+    check("skipped=1 (existing reused)", data.skipped === 1);
+    check("failed=0", data.failed === 0);
+    const skippedItem = data.items.find((i) => i.id === hasKey.id);
+    check("existing account marked skipped", skippedItem && skippedItem.skipped === true && skippedItem.ok === true);
+    const createdItem = data.items.find((i) => i.id === missing.id);
+    check("missing account marked created", createdItem && createdItem.skipped === false && createdItem.ok === true);
+    check("only one upstream token call", calls.filter((c) => c.url.endsWith("/api/ynai/tokens")).length === 1);
+    const existingSecret = await mod.getAccountSecret(env, hasKey.id);
+    check("existing token untouched", existingSecret.apiToken === "existing-token");
+    const newSecret = await mod.getAccountSecret(env, missing.id);
+    check("missing account got new token", newSecret.apiToken === "tok-new");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
 console.log(`\nselftest-accounts-batch: ${passed} checks passed`);

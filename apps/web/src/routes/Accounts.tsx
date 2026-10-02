@@ -244,8 +244,9 @@ export default function Accounts() {
           <div className="mt-4 rounded-(--radius-input) border border-(--color-border) bg-(--color-surface-2) p-3">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
               <span className="text-(--color-muted)">
-                共 {provisionResult.total} 个 · 成功{" "}
+                共 {provisionResult.total} 个 · 新建{" "}
                 <span className="font-semibold text-(--color-success)">{provisionResult.success}</span> ·
+                复用 <span className="font-semibold">{provisionResult.skipped ?? 0}</span> ·
                 失败 <span className="font-semibold text-(--color-warning)">{provisionResult.failed}</span>
               </span>
               {provisionResult.failed > 0 && (
@@ -263,7 +264,7 @@ export default function Accounts() {
                 {provisionResult.items.map((item) => (
                   <li key={item.id} className="flex items-center gap-2">
                     <span className={item.ok ? "text-(--color-success)" : "text-(--color-warning)"}>
-                      {item.ok ? "成功" : "失败"}
+                      {item.skipped ? "复用" : item.ok ? "新建" : "失败"}
                     </span>
                     <span className="truncate text-(--color-muted)">{item.username}</span>
                     {!item.ok && item.error && (

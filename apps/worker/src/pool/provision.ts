@@ -51,17 +51,26 @@ async function createKey(
   );
 }
 
+export interface ProvisionOptions {
+  // force=true 时忽略已有 apiToken，强制向上游新建（owner 显式点击时使用）。
+  force?: boolean;
+}
+
 export async function provisionToken(
   env: Env,
   account: AccountRow,
   upstream?: UpstreamRow | null,
   fetchImpl: FetchLike = fetch,
-  name?: string
+  name?: string,
+  options?: ProvisionOptions
 ): Promise<string> {
   const row = upstream ?? (await getUpstream(env, account.upstream_id));
   if (!row) throw new UpstreamHttpError("upstream_not_found", 404, "NO_UPSTREAM");
 
   const secret = await getAccountSecret(env, account.id);
+  // 复用：账号已有生图 key 且非强制新建时，直接返回，不请求上游。
+  if (!options?.force && secret?.apiToken) return secret.apiToken;
+
   const jwt = secret?.jwt;
   if (!jwt) throw new UpstreamHttpError("account has no jwt", 400, "ACCOUNT_NO_JWT");
 

@@ -358,7 +358,12 @@ section("5. GET/PATCH /api/generate/options");
   check("returns enabled upstreams", ownerBody.upstreams.some((u) => u.id === upModels.id));
   const optsEmpty = ownerBody.upstreams.find((u) => u.id === upModels.id);
   check("models_json empty falls back to models table", optsEmpty.models.slice().sort().join(",") === "logical-x,logical-y");
-  check("nai-compatible sampler defaults present", optsEmpty.samplers.length >= 10 && optsEmpty.samplers.includes("k_euler"));
+  check(
+    "nai-compatible sampler defaults = 参考项目 7 个",
+    optsEmpty.samplers.join(",") ===
+      "k_euler_ancestral,k_euler,k_dpm_2,k_dpm_2_ancestral,k_dpmpp_2s_ancestral,k_dpmpp_2m,k_dpmpp_sde"
+  );
+  check("k_dpmpp_2m_sde 不在默认采样器（会触发 502）", !optsEmpty.samplers.includes("k_dpmpp_2m_sde"));
   check("nai-compatible noise default present", optsEmpty.noise_schedules.includes("karras"));
   check("default sizes present (4)", optsEmpty.sizes.length === 4 && optsEmpty.sizes[0].width === 832);
   check("default actions present (3)", optsEmpty.actions.length === 3 && optsEmpty.actions[0].value === "generate");

@@ -2,7 +2,7 @@ import type { Env } from "../types";
 import { newId } from "../lib/ids";
 import { nowIso } from "../lib/time";
 import { parseJson } from "../lib/json";
-import { getKv, setKv } from "../pool/kv";
+import { deleteKv, getKv, setKv } from "../pool/kv";
 import { BUILTIN_ARTISTS } from "../presets/builtinArtists";
 
 export type PresetKind = "recipe" | "artist";
@@ -113,6 +113,15 @@ export async function ensureBuiltinArtists(env: Env, sid: string): Promise<void>
       .run();
   }
   await setKv(env, seedKey, "1");
+}
+
+/**
+ * 级联清理该 sid 的全部预设与种子标记。
+ * 用于删除分享密码时避免留下孤儿数据；不触碰画廊图片。
+ */
+export async function deletePresetsForSid(env: Env, sid: string): Promise<void> {
+  await env.DB.prepare("DELETE FROM presets WHERE owner_sid=?").bind(sid).run();
+  await deleteKv(env, `preset_seed:artist:${sid}`);
 }
 
 export async function getPreset(env: Env, id: string): Promise<PresetRow | null> {

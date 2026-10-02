@@ -7,7 +7,7 @@ import {
   type SharePasswordPatch
 } from "../db/sharePasswords";
 import { readJson } from "../lib/json";
-import { ensureBuiltinArtists } from "../db/presets";
+import { deletePresetsForSid, ensureBuiltinArtists } from "../db/presets";
 import { requireOrigin, requireOwner } from "./guard";
 import type { AppEnv } from "../types";
 
@@ -89,8 +89,11 @@ sharePasswords.patch("/:id", requireOrigin, async (c) => {
   return c.json(updated);
 });
 
-// 删除仅使密码失效，不删除该画廊图片（画廊仍保留，等待 owner 手动清理）。
+// 删除仅使密码失效：级联清理该 sid 的预设与种子标记，
+// 但不删除该画廊图片（既有约定：画廊仍保留，等待 owner 手动清理）。
 sharePasswords.delete("/:id", requireOrigin, async (c) => {
-  await deleteSharePassword(c.env, c.req.param("id"));
+  const id = c.req.param("id");
+  await deleteSharePassword(c.env, id);
+  await deletePresetsForSid(c.env, id);
   return c.json({ ok: true });
 });

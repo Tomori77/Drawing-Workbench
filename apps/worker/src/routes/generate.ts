@@ -226,7 +226,8 @@ generate.post("/", requireOrigin, async (c) => {
         error: mapped.error,
         message: mapped.message,
         generation_id: result.request_id ?? null,
-        attempts: result.attempts ?? 0
+        attempts: result.attempts ?? 0,
+        attempts_detail: result.attempts_detail ?? []
       },
       mapped.status as 400
     );

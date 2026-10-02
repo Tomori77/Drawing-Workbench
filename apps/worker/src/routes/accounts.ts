@@ -3,6 +3,7 @@ import {
   createAccount,
   deleteAccount,
   getAccount,
+  getAccountSecret,
   listAccounts,
   listAccountsPublic,
   presentAccount,
@@ -62,6 +63,7 @@ accounts.post("/", async (c) => {
   let provisionError: string | undefined;
   if (!body.api_token) {
     try {
+      // 新账号本来就没有 key，此处语义等同新建；provisionToken 默认复用已有 token。
       await provisionToken(c.env, row, upstream);
       accountRow = (await getAccount(c.env, row.id)) ?? row;
     } catch (err) {
@@ -130,14 +132,23 @@ accounts.post("/provision_all", async (c) => {
     username: string;
     ok: boolean;
     has_api_token: boolean;
+    skipped?: boolean;
     error?: string;
   }> = [];
   let success = 0;
+  let skipped = 0;
 
   for (const row of targets) {
+    const secret = await getAccountSecret(c.env, row.id);
+    // 批量只补缺失 key：已有生图 key 的账号直接复用跳过，不请求上游。
+    if (secret?.apiToken) {
+      items.push({ id: row.id, username: row.username, ok: true, has_api_token: true, skipped: true });
+      skipped += 1;
+      continue;
+    }
     try {
       await provisionToken(c.env, row);
-      items.push({ id: row.id, username: row.username, ok: true, has_api_token: true });
+      items.push({ id: row.id, username: row.username, ok: true, has_api_token: true, skipped: false });
       success += 1;
     } catch (err) {
       const message = err instanceof Error ? truncateLog(err.message) : "provision_failed";
@@ -151,7 +162,7 @@ accounts.post("/provision_all", async (c) => {
     }
   }
 
-  return c.json({ total: targets.length, success, failed: targets.length - success, items });
+  return c.json({ total: targets.length, success, skipped, failed: targets.length - success - skipped, items });
 });
 
 accounts.post("/batch_delete", async (c) => {
@@ -232,7 +243,8 @@ accounts.post("/:id/provision_token", async (c) => {
   const row = await getAccount(c.env, id);
   if (!row) return c.json({ error: "not_found" }, 404);
   try {
-    await provisionToken(c.env, row);
+    // 单账号「获取生图 Token」是显式操作：force=true，始终向上游新建。
+    await provisionToken(c.env, row, null, fetch, undefined, { force: true });
     return c.json({ ok: true, id: row.id, has_api_token: true });
   } catch (err) {
     const status = err instanceof UpstreamHttpError ? err.status : 502;

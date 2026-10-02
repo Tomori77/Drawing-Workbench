@@ -23,9 +23,11 @@ export const modelOptions = [
 export const samplerOptions = [
   { value: "k_euler_ancestral", label: "Euler Ancestral" },
   { value: "k_euler", label: "Euler" },
+  { value: "k_dpm_2", label: "DPM2" },
+  { value: "k_dpm_2_ancestral", label: "DPM2 Ancestral" },
+  { value: "k_dpmpp_2s_ancestral", label: "DPM++ 2S Ancestral" },
   { value: "k_dpmpp_2m", label: "DPM++ 2M" },
-  { value: "k_dpmpp_2m_sde", label: "DPM++ 2M SDE" },
-  { value: "k_dpmpp_2s_ancestral", label: "DPM++ 2S Ancestral" }
+  { value: "k_dpmpp_sde", label: "DPM++ SDE" }
 ];
 
 export const noiseScheduleOptions = [

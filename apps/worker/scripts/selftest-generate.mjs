@@ -436,4 +436,37 @@ section("7. POST /api/generate end-to-end");
   }
 }
 
+/* ================= 8. 上游错误完整透出、日志仍截断 ================= */
+section("8. upstream error surfaced in full, DB log truncated");
+{
+  const up8 = await mod.createUpstream(env, {
+    name: "nai8",
+    type: "nai-compatible",
+    base_url: "https://nai8.example",
+    priority: 200000,
+    capabilities: { account_strategy: "fixed" }
+  });
+  await insertAccountRow("long-err", { upstreamId: up8.id, username: "long-err", secret: { apiToken: "tok-long" } });
+
+  const longDetail = "E".repeat(1200);
+  const fetchImpl = async () =>
+    new Response(JSON.stringify({ detail: longDetail }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" }
+    });
+  const canonical = mod.inboundToCanonical({ prompt: "x", model: "m" });
+  const result = await mod.runPipeline(canonical, {
+    env,
+    fetch: fetchImpl,
+    selectUpstreams: (list) => list.filter((u) => u.id === up8.id)
+  });
+  check("client error keeps full upstream body", result.error?.message === longDetail);
+  check("client message not truncated to 200", (result.error?.message ?? "").length === 1200);
+  const mapped = mod.mapUpstreamError(result);
+  check("mapped message keeps full body", mapped.message === longDetail);
+
+  const attemptRow = await DB.prepare("SELECT error FROM request_attempts WHERE request_id=?").bind(result.request_id).first();
+  check("request_attempts.error stays truncated", typeof attemptRow.error === "string" && attemptRow.error.length <= 301 && attemptRow.error.endsWith("…"));
+}
+
 console.log(`\nselftest-generate: ${passed} checks passed`);
