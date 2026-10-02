@@ -5,6 +5,9 @@ import Home from "./routes/Home";
 import Playground from "./routes/Playground";
 import Gallery from "./routes/Gallery";
 import Accounts from "./routes/Accounts";
+import ApiKeys from "./routes/ApiKeys";
+import CheckinSettings from "./routes/CheckinSettings";
+import Upstreams from "./routes/Upstreams";
 import Placeholder from "./routes/Placeholder";
 import ProtectedRoute from "./routes/ProtectedRoute";
 
@@ -48,7 +51,23 @@ export default function App() {
         path="/console/api-keys"
         element={
           <Protected>
-            <Placeholder title="API 密钥" description="为开放 API 创建与管理访问密钥。" />
+            <ApiKeys />
+          </Protected>
+        }
+      />
+      <Route
+        path="/console/checkin"
+        element={
+          <Protected>
+            <CheckinSettings />
+          </Protected>
+        }
+      />
+      <Route
+        path="/console/upstreams"
+        element={
+          <Protected>
+            <Upstreams />
           </Protected>
         }
       />

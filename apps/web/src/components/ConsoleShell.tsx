@@ -4,6 +4,7 @@ import { useAuth } from "../hooks/useAuth";
 import { useSidebarStore } from "../lib/sidebar";
 import {
   IconBrush,
+  IconCalendar,
   IconChevronLeft,
   IconDashboard,
   IconGallery,
@@ -13,6 +14,7 @@ import {
   IconLog,
   IconLogo,
   IconSearch,
+  IconServer,
   IconUser,
   IconWallet
 } from "./icons";
@@ -46,6 +48,8 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: "/console/accounts", label: "账号池", icon: <IconWallet className="size-4.5" /> },
       { to: "/console/api-keys", label: "API 密钥", icon: <IconKey className="size-4.5" /> },
+      { to: "/console/checkin", label: "签到设置", icon: <IconCalendar className="size-4.5" /> },
+      { to: "/console/upstreams", label: "上游", icon: <IconServer className="size-4.5" /> },
       { to: "/console/logs", label: "生成日志", icon: <IconLog className="size-4.5" /> },
       { to: "/console/profile", label: "个人资料", icon: <IconUser className="size-4.5" /> }
     ]
@@ -58,6 +62,8 @@ const CRUMB_LABELS: Record<string, string> = {
   "/console/history": "本地历史",
   "/console/accounts": "账号池",
   "/console/api-keys": "API 密钥",
+  "/console/checkin": "签到设置",
+  "/console/upstreams": "上游",
   "/console/logs": "生成日志",
   "/console/profile": "个人资料",
   "/gallery": "画廊"

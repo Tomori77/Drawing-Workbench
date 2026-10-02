@@ -285,3 +285,189 @@ export function provisionAccountToken(id: string): Promise<ProvisionTokenResult>
 export function listUpstreams(): Promise<UpstreamListResponse> {
   return apiFetch<UpstreamListResponse>("/api/upstreams");
 }
+
+export interface UpstreamInput {
+  name?: string;
+  type?: string;
+  base_url?: string;
+  auth?: string | null;
+  models?: string[];
+  capabilities?: Record<string, unknown>;
+  transform?: Record<string, unknown>;
+  priority?: number;
+  weight?: number;
+  enabled?: boolean;
+}
+
+export interface ModelRow {
+  logical_name: string;
+  upstream_id: string;
+  upstream_model: string;
+  enabled: number;
+}
+
+export interface ModelListResponse {
+  items: ModelRow[];
+}
+
+export function createUpstream(body: UpstreamInput): Promise<UpstreamPublic> {
+  return apiFetch<UpstreamPublic>("/api/upstreams", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+export function updateUpstream(id: string, patch: UpstreamInput): Promise<UpstreamPublic> {
+  return apiFetch<UpstreamPublic>(`/api/upstreams/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch)
+  });
+}
+
+export function deleteUpstream(id: string): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/upstreams/${encodeURIComponent(id)}`, {
+    method: "DELETE"
+  });
+}
+
+export function listModels(): Promise<ModelListResponse> {
+  return apiFetch<ModelListResponse>("/api/models");
+}
+
+export interface ApiKeyPolicy {
+  allowed_models?: string[];
+  daily_requests?: number;
+  daily_gems?: number;
+  max_concurrency?: number;
+  parameter_mode?: "merge" | "fixed";
+  fixed_parameters?: Record<string, unknown>;
+  limits?: Record<string, { min?: number; max?: number }>;
+  allow_img2img?: boolean;
+  allow_inpaint?: boolean;
+  allow_extra_parameters?: boolean;
+  [key: string]: unknown;
+}
+
+export interface ApiKeyPublic {
+  id: string;
+  name: string | null;
+  role: string;
+  mode: string;
+  policy: ApiKeyPolicy;
+  allowed_models: string[];
+  allowed_upstreams: string[];
+  quota: number | null;
+  used_count: number;
+  rate_limit: number | null;
+  expires_at: string | null;
+  enabled: boolean;
+  created_at: string;
+}
+
+export interface ApiKeyInput {
+  name?: string | null;
+  role?: string;
+  mode?: string;
+  policy?: ApiKeyPolicy;
+  allowed_models?: string[];
+  allowed_upstreams?: string[];
+  quota?: number | null;
+  rate_limit?: number | null;
+  expires_at?: string | null;
+  enabled?: boolean;
+}
+
+export interface ApiKeyCreated extends ApiKeyPublic {
+  key: string;
+}
+
+export interface ApiKeyListResponse {
+  items: ApiKeyPublic[];
+}
+
+export function listApiKeys(): Promise<ApiKeyListResponse> {
+  return apiFetch<ApiKeyListResponse>("/api/keys");
+}
+
+export function getApiKey(id: string): Promise<ApiKeyPublic> {
+  return apiFetch<ApiKeyPublic>(`/api/keys/${encodeURIComponent(id)}`);
+}
+
+export function createApiKey(body: ApiKeyInput): Promise<ApiKeyCreated> {
+  return apiFetch<ApiKeyCreated>("/api/keys", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+export function updateApiKey(id: string, patch: ApiKeyInput): Promise<ApiKeyPublic> {
+  return apiFetch<ApiKeyPublic>(`/api/keys/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch)
+  });
+}
+
+export function deleteApiKey(id: string): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/keys/${encodeURIComponent(id)}`, {
+    method: "DELETE"
+  });
+}
+
+export interface CheckinSettings {
+  enabled: boolean;
+  timezone: string;
+  weekday_times: string[];
+  weekend_times: string[];
+  next_run_at: string | null;
+  lease_until: string | null;
+  status: string;
+  last_message: string | null;
+  updated_at: string;
+}
+
+export interface CheckinSettingsPatch {
+  enabled?: boolean;
+  timezone?: string;
+  weekday_times?: string[];
+  weekend_times?: string[];
+}
+
+export type CheckinStatus = "success" | "retry" | "jwt_expired" | "manual_required" | "skipped" | (string & {});
+
+export interface CheckinResult {
+  account_id: string;
+  ok: boolean;
+  status: CheckinStatus;
+  slot: string | null;
+  status_code: number | null;
+  message: string;
+}
+
+export interface CheckinTestResult {
+  total: number;
+  success: number;
+  items: CheckinResult[];
+}
+
+export function getCheckinSettings(): Promise<CheckinSettings> {
+  return apiFetch<CheckinSettings>("/api/checkin/settings");
+}
+
+export function updateCheckinSettings(patch: CheckinSettingsPatch): Promise<CheckinSettings> {
+  return apiFetch<CheckinSettings>("/api/checkin/settings", {
+    method: "PATCH",
+    body: JSON.stringify(patch)
+  });
+}
+
+export function runCheckinTest(): Promise<CheckinTestResult> {
+  return apiFetch<CheckinTestResult>("/api/checkin/test", {
+    method: "POST"
+  });
+}
+
+export function checkinAccount(id: string): Promise<CheckinResult> {
+  return apiFetch<CheckinResult>(`/api/accounts/${encodeURIComponent(id)}/test`, {
+    method: "POST"
+  });
+}

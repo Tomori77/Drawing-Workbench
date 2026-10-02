@@ -163,6 +163,29 @@ export function IconArrowUpRight(props: IconProps) {
   );
 }
 
+export function IconCalendar(props: IconProps) {
+  return (
+    <Base {...props}>
+      <rect x="3.5" y="5" width="17" height="16" rx="2" />
+      <path d="M3.5 9.5h17" />
+      <path d="M8 3v4" />
+      <path d="M16 3v4" />
+      <path d="m9 14.5 2 2 4-4" />
+    </Base>
+  );
+}
+
+export function IconServer(props: IconProps) {
+  return (
+    <Base {...props}>
+      <rect x="3.5" y="4" width="17" height="7" rx="2" />
+      <rect x="3.5" y="13" width="17" height="7" rx="2" />
+      <path d="M7 7.5h.01" />
+      <path d="M7 16.5h.01" />
+    </Base>
+  );
+}
+
 export function IconLogo(props: IconProps) {
   return (
     <Base {...props}>

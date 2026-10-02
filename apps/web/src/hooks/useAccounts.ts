@@ -4,7 +4,6 @@ import {
   createAccount,
   deleteAccount,
   listAccounts,
-  listUpstreams,
   provisionAccountToken,
   refreshAccountGems,
   refreshAllGems,
@@ -14,12 +13,11 @@ import {
   type BatchCreateResult,
   type CreateAccountBody,
   type RefreshAllResult,
-  type UpdateAccountPatch,
-  type UpstreamListResponse
+  type UpdateAccountPatch
 } from "../lib/api";
+import { ACCOUNTS_QUERY_KEY, UPSTREAMS_QUERY_KEY } from "./useUpstreams";
 
-export const ACCOUNTS_QUERY_KEY = ["accounts"] as const;
-export const UPSTREAMS_QUERY_KEY = ["upstreams"] as const;
+export { ACCOUNTS_QUERY_KEY } from "./useUpstreams";
 
 export function useAccounts(upstreamId?: string, enabled = true) {
   return useQuery<AccountListResponse>({
@@ -29,15 +27,9 @@ export function useAccounts(upstreamId?: string, enabled = true) {
   });
 }
 
-export function useUpstreams() {
-  return useQuery<UpstreamListResponse>({
-    queryKey: UPSTREAMS_QUERY_KEY,
-    queryFn: () => listUpstreams()
-  });
-}
-
 function invalidateAccounts(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.invalidateQueries({ queryKey: ACCOUNTS_QUERY_KEY });
+  queryClient.invalidateQueries({ queryKey: UPSTREAMS_QUERY_KEY });
 }
 
 export function useCreateAccount() {
