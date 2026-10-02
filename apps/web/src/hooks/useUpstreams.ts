@@ -18,6 +18,7 @@ export function useUpstreams(enabled = true) {
   return useQuery<UpstreamListResponse>({
     queryKey: UPSTREAMS_QUERY_KEY,
     queryFn: () => listUpstreams(),
+    staleTime: 5 * 60_000,
     enabled
   });
 }
@@ -26,6 +27,7 @@ export function useModels(enabled = true) {
   return useQuery<ModelListResponse>({
     queryKey: MODELS_QUERY_KEY,
     queryFn: () => listModels(),
+    staleTime: 5 * 60_000,
     enabled
   });
 }

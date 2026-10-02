@@ -16,6 +16,7 @@ export function useApiKeys(enabled = true) {
   return useQuery<ApiKeyListResponse>({
     queryKey: API_KEYS_QUERY_KEY,
     queryFn: () => listApiKeys(),
+    staleTime: 5 * 60_000,
     enabled
   });
 }
@@ -24,6 +25,7 @@ export function useApiKey(id: string | null) {
   return useQuery<ApiKeyPublic>({
     queryKey: [...API_KEYS_QUERY_KEY, id],
     queryFn: () => getApiKey(id as string),
+    staleTime: 5 * 60_000,
     enabled: id !== null
   });
 }

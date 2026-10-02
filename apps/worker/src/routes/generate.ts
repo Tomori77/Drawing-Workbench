@@ -5,6 +5,8 @@ import { newId } from "../lib/ids";
 import { nowIso } from "../lib/time";
 import { readJson } from "../lib/json";
 import { requireSession, requireOrigin } from "./guard";
+import { getWorkspaceSettings, type WorkspaceAccountMode } from "../pool/workspace";
+import type { AccountStrategy } from "../db/upstreams";
 import type { AppEnv } from "../types";
 
 export const generate = new Hono<AppEnv>();
@@ -28,6 +30,19 @@ interface InboundBody {
   parameters?: Record<string, unknown>;
   n?: number;
   size?: string;
+  upstream_id?: string;
+  account_mode?: WorkspaceAccountMode;
+  account_id?: string;
+}
+
+function isAccountMode(value: unknown): value is WorkspaceAccountMode {
+  return value === "auto" || value === "balance" || value === "fixed";
+}
+
+function accountStrategyFor(mode: WorkspaceAccountMode): AccountStrategy {
+  if (mode === "balance") return "balance_first";
+  if (mode === "fixed") return "fixed";
+  return "round_robin";
 }
 
 function asStringArray(value: string | string[] | undefined): string[] {
@@ -161,7 +176,26 @@ generate.post("/", requireOrigin, async (c) => {
   const body = await readJson<InboundBody>(c);
   const canonical = inboundToCanonical(body);
   const role = c.get("role") ?? "friend";
-  const result = await runPipeline(canonical, { env: c.env });
+
+  // 创作台独立于网关：读取工作台设置作为默认，body 可覆盖。
+  const settings = await getWorkspaceSettings(c.env);
+  const upstreamId = body.upstream_id ?? settings.upstream_id;
+  const mode: WorkspaceAccountMode = isAccountMode(body.account_mode)
+    ? body.account_mode
+    : settings.account_mode;
+  const accountId = mode === "fixed" ? body.account_id ?? settings.account_id : undefined;
+
+  if (mode === "fixed" && !accountId) {
+    return c.json({ error: "account_required", message: "固定账号模式需要 account_id" }, 400);
+  }
+
+  const result = await runPipeline(canonical, {
+    env: c.env,
+    upstreamId,
+    accountId,
+    accountStrategy: accountStrategyFor(mode),
+    selectionScope: "workspace"
+  });
 
   if (!result.ok) {
     const mapped = mapUpstreamError(result);

@@ -16,6 +16,7 @@ export function useCheckinSettings(enabled = true) {
   return useQuery<CheckinSettings>({
     queryKey: CHECKIN_QUERY_KEY,
     queryFn: () => getCheckinSettings(),
+    staleTime: 5 * 60_000,
     enabled
   });
 }

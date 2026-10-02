@@ -77,7 +77,7 @@ function makeD1() {
   };
 }
 
-const MIGRATIONS = ["0001_init.sql", "0002_gateway.sql", "0003_checkin.sql", "0004_profile.sql"];
+const MIGRATIONS = ["0001_init.sql", "0002_gateway.sql", "0003_checkin.sql", "0004_profile.sql", "0005_account_usage.sql"];
 async function applyMigrations(db) {
   for (const name of MIGRATIONS) {
     const sql = await readFile(path.join(here, "..", "migrations", name), "utf8");

@@ -86,10 +86,11 @@ export async function markAccountFailure(
     .bind(accountId, failureCount, cooldownUntil, statusCode, now)
     .run();
 
+  // 仅在触发冷却时改写 status 为 "cooling"；未达阈值时保持原 status，避免账号状态被失败污染。
   await env.DB.prepare(
-    "UPDATE accounts SET failure_count=?, cooldown_until=?, status=?, updated_at=? WHERE id=?"
+    "UPDATE accounts SET failure_count=?, cooldown_until=?, status=CASE WHEN ?=1 THEN 'cooling' ELSE status END, updated_at=? WHERE id=?"
   )
-    .bind(failureCount, cooldownUntil, cooldownUntil ? "cooling" : "error", now, accountId)
+    .bind(failureCount, cooldownUntil, cooldownUntil ? 1 : 0, now, accountId)
     .run();
 
   return { failure_count: failureCount, cooldown_until: cooldownUntil };

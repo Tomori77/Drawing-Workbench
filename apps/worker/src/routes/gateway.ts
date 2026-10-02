@@ -172,6 +172,7 @@ async function runGateway(
       env,
       gatewayKeyId: key.id,
       mode,
+      selectionScope: "gateway",
       rawBody: mode === "passthrough" ? call.rawBody : undefined,
       allowedUpstreams: call.allowedUpstreams.length ? call.allowedUpstreams : undefined,
       allowedModels: call.allowedModels.length ? call.allowedModels : undefined

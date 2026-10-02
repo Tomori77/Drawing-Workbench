@@ -23,6 +23,7 @@ export function useAccounts(upstreamId?: string, enabled = true) {
   return useQuery<AccountListResponse>({
     queryKey: [...ACCOUNTS_QUERY_KEY, upstreamId ?? "all"],
     queryFn: () => listAccounts(upstreamId),
+    staleTime: 5 * 60_000,
     enabled
   });
 }

@@ -7,6 +7,7 @@ export function useProfile(enabled = true) {
   return useQuery<Profile>({
     queryKey: PROFILE_QUERY_KEY,
     queryFn: () => getProfile(),
+    staleTime: 5 * 60_000,
     enabled
   });
 }

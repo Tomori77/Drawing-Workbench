@@ -3,7 +3,7 @@ import { listUpstreams, getUpstreamSecret, getUpstream, parseAccountStrategy } f
 import { selectAccounts, type AccountStrategy } from "../pool/select";
 import { markAccountFailure, markAccountSuccess, isCooldownTrigger } from "../pool/cooldown";
 import { refreshJwt } from "../pool/login";
-import { provisionToken } from "../pool/provision";
+import { getAccountLimit, addAccountImages } from "../pool/limit";
 import { getAdapter } from "./registry";
 import { applyRules, loadRules, RewriteBlockedError } from "../rewrite/engine";
 import type { RewriteRule } from "../rewrite/types";
@@ -38,6 +38,10 @@ export interface PipelineOptions {
   rawBody?: Uint8Array | string;
   allowedUpstreams?: string[];
   allowedModels?: string[];
+  upstreamId?: string;
+  accountId?: string;
+  cursorKey?: string;
+  selectionScope?: "workspace" | "gateway";
 }
 
 export interface PipelineAttempt {
@@ -198,7 +202,7 @@ async function executeAttempt(
         error: {
           message: aborted ? "upstream_timeout" : truncateLog(message),
           code: aborted ? "UPSTREAM_TIMEOUT" : "UPSTREAM_CONNECT",
-          retryable: false
+          retryable: true
         }
       },
       status: null,
@@ -288,6 +292,10 @@ export async function runPipeline(
     const allowed = new Set(opts.allowedUpstreams);
     ordered = ordered.filter((u) => allowed.has(u.id));
   }
+  // 显式指定上游（创作台）：仅在启用上游中取该 id；不存在或停用返回 NO_UPSTREAM。
+  if (opts.upstreamId) {
+    ordered = upstreams.filter((u) => u.id === opts.upstreamId);
+  }
   const first = ordered[0];
   if (!first) {
     return { ok: false, error: { message: "no_upstream", code: "NO_UPSTREAM" } };
@@ -330,7 +338,16 @@ export async function runPipeline(
     return { ...result, upstream_id: upstream.id, account_id: null, request_id: requestId, attempts: 1, duration_ms: duration, request };
   }
 
-  const selection = await selectAccounts(opts.env, upstream.id, strategy);
+  // 选号游标按作用域隔离：网关保持历史行为（缺省 gateway 前缀），创作台用 workspace 前缀。
+  // 调用方显式传 cursorKey 时优先级最高。
+  const selectionScope = opts.selectionScope ?? "gateway";
+  const cursorKey =
+    opts.cursorKey ??
+    (selectionScope === "workspace" ? `rr_cursor:workspace:${upstream.id}` : `rr_cursor:gateway:${upstream.id}`);
+  const selection = await selectAccounts(opts.env, upstream.id, strategy, {
+    cursorKey,
+    accountId: opts.accountId
+  });
   if (!selection.candidates.length) {
     return {
       ok: false,
@@ -349,6 +366,7 @@ export async function runPipeline(
   const attemptsDetail: PipelineAttempt[] = [];
   let attemptNo = 0;
   let lastMessage = "";
+  const accountLimit = await getAccountLimit(opts.env, upstream.id);
 
   for (const candidate of selection.candidates) {
     let token = candidate.token;
@@ -376,6 +394,7 @@ export async function runPipeline(
 
       if (success) {
         await markAccountSuccess(opts.env, candidate.account.id).catch(() => {});
+        await addAccountImages(opts.env, candidate.account.id, result.images?.length ?? 0, accountLimit).catch(() => {});
         const duration = Date.now() - started;
         await logRequest(opts.env, requestId, gatewayKeyId, mode, candidate.account.id, path, status ?? 200, true, duration, null, outputBytes(result), result.cost_gems ?? 0);
         return {
@@ -393,22 +412,23 @@ export async function runPipeline(
       const errorStatus = result.error?.status ?? status ?? null;
       const retryable = result.error?.retryable ?? (errorStatus != null && isCooldownTrigger(errorStatus));
 
-      if (errorStatus != null) {
-        await markAccountFailure(opts.env, candidate.account.id, errorStatus, upstream.id).catch(() => {});
-      }
-
-      if (errorStatus === 401 && !retried401 && round === 0) {
+      // 401：仅用托管密码重登（refreshJwt），成功后用原 api_token 对该账号重试一次。
+      // 重登前不计失败，确认放弃（重登失败或重登后仍失败）才计一次。
+      if (errorStatus === 401 && !retried401) {
         retried401 = true;
         const fresh = await refreshJwt(opts.env, candidate.account, doFetch).catch(() => null);
-        if (fresh) {
-          const provisioned = await provisionToken(opts.env, candidate.account, null, doFetch).catch(
-            () => null
-          );
-          if (provisioned) {
-            token = provisioned;
-            continue;
-          }
-        }
+        if (fresh) continue;
+      }
+
+      const failureStatus =
+        errorStatus ??
+        (result.error?.code === "UPSTREAM_TIMEOUT"
+          ? 504
+          : result.error?.code === "UPSTREAM_CONNECT"
+            ? 502
+            : null);
+      if (failureStatus != null) {
+        await markAccountFailure(opts.env, candidate.account.id, failureStatus, upstream.id).catch(() => {});
       }
 
       if (retryable) {

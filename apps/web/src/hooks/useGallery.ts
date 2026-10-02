@@ -18,6 +18,7 @@ export const GALLERY_PAGE_SIZE = 24;
 export function useGallery(limit = GALLERY_PAGE_SIZE) {
   return useInfiniteQuery<GalleryPage, Error, InfiniteData<GalleryPage>, readonly unknown[], number>({
     queryKey: [...GALLERY_QUERY_KEY, limit],
+    staleTime: 30_000,
     initialPageParam: 0,
     queryFn: ({ pageParam }) => listGallery({ limit, offset: pageParam }),
     getNextPageParam: (lastPage, allPages) => {

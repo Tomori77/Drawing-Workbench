@@ -11,6 +11,7 @@ export function useLogs(filters: ListLogsArgs) {
   return useQuery<LogsPage>({
     queryKey: [...LOGS_QUERY_KEY, source, status, limit, offset],
     queryFn: () => listLogs(filters),
+    staleTime: 5 * 60_000,
     placeholderData: (prev) => prev
   });
 }
@@ -19,6 +20,7 @@ export function useLogAttempts(requestId: string | null) {
   return useQuery<LogAttemptsResponse>({
     queryKey: [...LOGS_QUERY_KEY, "attempts", requestId],
     queryFn: () => getLogAttempts(requestId as string),
+    staleTime: 5 * 60_000,
     enabled: requestId !== null
   });
 }
