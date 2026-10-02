@@ -1,0 +1,91 @@
+import { Hono } from "hono";
+import {
+  createSharePassword,
+  deleteSharePassword,
+  listSharePasswords,
+  updateSharePassword,
+  type SharePasswordPatch
+} from "../db/sharePasswords";
+import { readJson } from "../lib/json";
+import { requireOrigin, requireOwner } from "./guard";
+import type { AppEnv } from "../types";
+
+export const sharePasswords = new Hono<AppEnv>();
+
+sharePasswords.use("*", requireOwner);
+
+interface AssetStat {
+  owner_sid: string;
+  used_bytes: number;
+  count: number;
+}
+
+async function assetStats(env: AppEnv["Bindings"]): Promise<Map<string, { used_bytes: number; count: number }>> {
+  const { results } = await env.DB.prepare(
+    "SELECT owner_sid, COALESCE(SUM(size_bytes),0) AS used_bytes, COUNT(*) AS count FROM assets GROUP BY owner_sid"
+  ).all<AssetStat>();
+  const map = new Map<string, { used_bytes: number; count: number }>();
+  for (const row of results ?? []) {
+    map.set(row.owner_sid, { used_bytes: row.used_bytes ?? 0, count: row.count ?? 0 });
+  }
+  return map;
+}
+
+sharePasswords.get("/", async (c) => {
+  const [items, stats] = await Promise.all([listSharePasswords(c.env), assetStats(c.env)]);
+  return c.json({
+    items: items.map((item) => {
+      const stat = stats.get(item.id);
+      return {
+        ...item,
+        used_bytes: stat?.used_bytes ?? 0,
+        count: stat?.count ?? 0
+      };
+    })
+  });
+});
+
+sharePasswords.post("/", requireOrigin, async (c) => {
+  const body = await readJson<{
+    label?: string;
+    password?: string;
+    quota_bytes?: number;
+  }>(c);
+  const password = typeof body.password === "string" ? body.password : "";
+  if (password.length < 4) {
+    return c.json({ error: "invalid_password", message: "密码至少 4 位" }, 400);
+  }
+  const label = typeof body.label === "string" ? body.label.trim() : "";
+  const quota =
+    body.quota_bytes === undefined ? undefined : Number(body.quota_bytes);
+  if (quota !== undefined && (!Number.isFinite(quota) || quota < 0)) {
+    return c.json({ error: "invalid_quota", message: "配额必须为非负数字" }, 400);
+  }
+  const created = await createSharePassword(c.env, { label, password, quota_bytes: quota });
+  return c.json(created, 201);
+});
+
+sharePasswords.patch("/:id", requireOrigin, async (c) => {
+  const id = c.req.param("id");
+  const body = await readJson<SharePasswordPatch>(c);
+  if (body.password !== undefined && body.password !== "" && body.password.length < 4) {
+    return c.json({ error: "invalid_password", message: "密码至少 4 位" }, 400);
+  }
+  if (body.quota_bytes !== undefined && (!Number.isFinite(body.quota_bytes) || body.quota_bytes < 0)) {
+    return c.json({ error: "invalid_quota", message: "配额必须为非负数字" }, 400);
+  }
+  const patch: SharePasswordPatch = {};
+  if (typeof body.label === "string") patch.label = body.label.trim();
+  if (typeof body.password === "string" && body.password !== "") patch.password = body.password;
+  if (body.quota_bytes !== undefined) patch.quota_bytes = body.quota_bytes;
+  if (body.enabled !== undefined) patch.enabled = body.enabled === true;
+  const updated = await updateSharePassword(c.env, id, patch);
+  if (!updated) return c.json({ error: "not_found" }, 404);
+  return c.json(updated);
+});
+
+// 删除仅使密码失效，不删除该画廊图片（画廊仍保留，等待 owner 手动清理）。
+sharePasswords.delete("/:id", requireOrigin, async (c) => {
+  await deleteSharePassword(c.env, c.req.param("id"));
+  return c.json({ ok: true });
+});

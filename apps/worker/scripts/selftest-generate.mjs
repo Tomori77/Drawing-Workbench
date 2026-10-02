@@ -81,7 +81,7 @@ function makeD1() {
 }
 
 async function applyMigrations(db) {
-  for (const name of ["0001_init.sql", "0002_gateway.sql", "0003_checkin.sql", "0005_account_usage.sql"]) {
+  for (const name of ["0001_init.sql", "0002_gateway.sql", "0003_checkin.sql", "0005_account_usage.sql", "0006_share_passwords.sql"]) {
     const sql = await readFile(path.join(here, "..", "migrations", name), "utf8");
     db.exec(sql);
   }
@@ -127,6 +127,8 @@ function makeR2() {
 function sessionMiddleware(c, next) {
   const role = c.req.header("X-Test-Role");
   if (role) c.set("role", role);
+  const sid = c.req.header("X-Test-Sid");
+  if (sid) c.set("sid", sid);
   return next();
 }
 
@@ -342,31 +344,31 @@ section("5. gallery list / get / delete");
     cost_gems: 0,
     images: [{ b64: pngB64("g1") }, { b64: pngB64("g2") }]
   };
-  const persisted = await mod.persistGeneration(env, canonical, result, "friend");
+  const persisted = await mod.persistGeneration(env, canonical, result, "friend", "friend-test");
 
-  const listRes = await req("GET", "http://localhost/api/gallery?limit=10", undefined, { "X-Test-Role": "friend" });
+  const listRes = await req("GET", "http://localhost/api/gallery?limit=10", undefined, { "X-Test-Role": "friend", "X-Test-Sid": "friend-test" });
   check("list returns 200", listRes.status === 200);
   const listBody = await listRes.json();
   check("list has items + total", Array.isArray(listBody.items) && typeof listBody.total === "number");
   check("list item has url + generation_id", Boolean(listBody.items[0].url) && Boolean(listBody.items[0].generation_id));
 
   const assetId = persisted.images[0].id;
-  const imgRes = await req("GET", `http://localhost/api/gallery/i/${assetId}`, undefined, { "X-Test-Role": "friend" });
+  const imgRes = await req("GET", `http://localhost/api/gallery/i/${assetId}`, undefined, { "X-Test-Role": "friend", "X-Test-Sid": "friend-test" });
   check("image returns 200", imgRes.status === 200);
   check("image has immutable cache", imgRes.headers.get("Cache-Control") === "public, max-age=31536000, immutable");
   const bytes = new Uint8Array(await imgRes.arrayBuffer());
   check("image bytes match", Buffer.from(bytes).toString() === "g1");
 
-  const thumbRes = await req("GET", `http://localhost/api/gallery/i/${assetId}?t=thumb`, undefined, { "X-Test-Role": "friend" });
+  const thumbRes = await req("GET", `http://localhost/api/gallery/i/${assetId}?t=thumb`, undefined, { "X-Test-Role": "friend", "X-Test-Sid": "friend-test" });
   check("missing thumb 404", thumbRes.status === 404);
 
   const beforeCount = listBody.total;
   const delRes = await req("DELETE", `http://localhost/api/gallery/${assetId}`, undefined, { "X-Test-Role": "owner" });
   check("delete returns ok", delRes.status === 200);
-  const afterRes = await req("GET", "http://localhost/api/gallery", undefined, { "X-Test-Role": "friend" });
+  const afterRes = await req("GET", "http://localhost/api/gallery", undefined, { "X-Test-Role": "friend", "X-Test-Sid": "friend-test" });
   const afterBody = await afterRes.json();
   check("list count decreases", afterBody.total === beforeCount - 1);
-  const goneRes = await req("GET", `http://localhost/api/gallery/i/${assetId}`, undefined, { "X-Test-Role": "friend" });
+  const goneRes = await req("GET", `http://localhost/api/gallery/i/${assetId}`, undefined, { "X-Test-Role": "friend", "X-Test-Sid": "friend-test" });
   check("deleted image gone", goneRes.status === 404);
 }
 
@@ -422,7 +424,7 @@ section("7. POST /api/generate end-to-end");
     check("response reports cost_gems", body.cost_gems === 5);
 
     check("image url is relative", body.images[0].url.startsWith("/api/gallery/i/"));
-    const objRes = await req("GET", `http://localhost${body.images[0].url}`, undefined, { "X-Test-Role": "friend" });
+    const objRes = await req("GET", `http://localhost${body.images[0].url}`, undefined, { "X-Test-Role": "owner" });
     check("generated image retrievable via gallery", objRes.status === 200);
     check("generated image bytes match", Buffer.from(new Uint8Array(await objRes.arrayBuffer())).toString() === "E2E-IMG");
 

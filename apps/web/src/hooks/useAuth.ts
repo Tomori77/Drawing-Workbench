@@ -4,6 +4,7 @@ export type Role = "owner" | "friend";
 
 export interface AuthState {
   role: Role;
+  sid?: string;
 }
 
 async function fetchMe(): Promise<AuthState | null> {

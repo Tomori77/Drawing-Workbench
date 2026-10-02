@@ -2,6 +2,7 @@ export type Role = "owner" | "friend";
 
 export interface SessionPayload {
   role: Role;
+  sid?: string;
   iat: number;
   exp: number;
 }

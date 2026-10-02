@@ -1,7 +1,12 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import { useClearGallery, useDeleteAsset, useGallery } from "../hooks/useGallery";
+import {
+  useClearGallery,
+  useDeleteAsset,
+  useGallery,
+  useGalleryOverview
+} from "../hooks/useGallery";
 import type { GalleryItem } from "../lib/api";
 import { gallerySorts } from "../lib/mock";
 import { IconLogo, IconSearch } from "../components/icons";
@@ -27,8 +32,11 @@ function formatTime(iso: string): string {
 
 export default function Gallery() {
   const { data: auth } = useAuth();
+  const isOwner = auth?.role === "owner";
   const [sort, setSort] = useState(gallerySorts[0].value);
-  const galleryQuery = useGallery();
+  const [sidFilter, setSidFilter] = useState("all");
+  const overviewQuery = useGalleryOverview(isOwner);
+  const galleryQuery = useGallery(sidFilter === "all" ? undefined : sidFilter);
   const deleteMutation = useDeleteAsset();
   const clearMutation = useClearGallery();
   const [lightbox, setLightbox] = useState<GalleryItem | null>(null);
@@ -37,6 +45,8 @@ export default function Gallery() {
 
   const items = (galleryQuery.data?.pages ?? []).flatMap((page) => page.items);
   const total = galleryQuery.data?.pages[0]?.total ?? 0;
+  const overview = overviewQuery.data?.items ?? [];
+  const clearingSid = sidFilter === "all" ? undefined : sidFilter;
 
   return (
     <div className="flex min-h-dvh flex-col bg-(--color-bg)">
@@ -102,7 +112,24 @@ export default function Gallery() {
                 );
               })}
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              {isOwner && overview.length > 0 && (
+                <label className="flex items-center gap-2 text-xs text-(--color-muted)">
+                  <span>画廊</span>
+                  <select
+                    value={sidFilter}
+                    onChange={(e) => setSidFilter(e.target.value)}
+                    className="h-9 rounded-full border border-(--color-border) bg-(--color-surface-1) px-3 text-sm outline-none focus:border-(--color-primary)"
+                  >
+                    <option value="all">全部</option>
+                    {overview.map((row) => (
+                      <option key={row.sid} value={row.sid}>
+                        {row.sid === "owner" ? "所有者" : row.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <p className="text-sm text-(--color-muted-2)">{total} 件作品</p>
               <button
                 type="button"
@@ -110,7 +137,7 @@ export default function Gallery() {
                 onClick={() => setConfirmClear(true)}
                 className="rounded-full border border-(--color-border) px-3.5 py-1.5 text-xs text-(--color-muted) transition-colors hover:border-(--color-warning)/50 hover:text-(--color-warning) disabled:cursor-not-allowed disabled:opacity-40"
               >
-                清空画廊
+                {clearingSid ? "清空该画廊" : "清空画廊"}
               </button>
             </div>
           </div>
@@ -232,12 +259,16 @@ export default function Gallery() {
       <ConfirmDialog
         open={confirmClear}
         onOpenChange={setConfirmClear}
-        title="清空整个画廊？"
-        description="将删除全部作品与缩略图，且无法恢复。"
+        title={clearingSid ? "清空该画廊？" : "清空整个画廊？"}
+        description={
+          clearingSid
+            ? "将删除该画廊全部作品与缩略图，且无法恢复。"
+            : "将删除全部作品与缩略图，且无法恢复。"
+        }
         confirmLabel="清空"
         pending={clearMutation.isPending}
         onConfirm={() => {
-          clearMutation.mutate(undefined, {
+          clearMutation.mutate(clearingSid, {
             onSuccess: () => setConfirmClear(false)
           });
         }}

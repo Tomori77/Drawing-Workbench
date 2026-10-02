@@ -5,6 +5,7 @@ import Home from "./routes/Home";
 import Playground from "./routes/Playground";
 import Gallery from "./routes/Gallery";
 import Accounts from "./routes/Accounts";
+import SharePasswords from "./routes/SharePasswords";
 import ApiKeys from "./routes/ApiKeys";
 import CheckinSettings from "./routes/CheckinSettings";
 import Upstreams from "./routes/Upstreams";
@@ -63,6 +64,14 @@ export default function App() {
         element={
           <OwnerOnly>
             <ApiKeys />
+          </OwnerOnly>
+        }
+      />
+      <Route
+        path="/console/share-passwords"
+        element={
+          <OwnerOnly>
+            <SharePasswords />
           </OwnerOnly>
         }
       />

@@ -90,6 +90,8 @@ export interface GalleryItem {
   mime: string | null;
   width: number | null;
   height: number | null;
+  owner_sid?: string;
+  size_bytes?: number;
   created_at: string;
   url: string;
   thumb_url: string | null;
@@ -105,11 +107,83 @@ export interface GalleryPage {
 export interface ListGalleryArgs {
   limit?: number;
   offset?: number;
+  sid?: string;
 }
 
-export function listGallery({ limit = 24, offset = 0 }: ListGalleryArgs = {}): Promise<GalleryPage> {
+export function listGallery({ limit = 24, offset = 0, sid }: ListGalleryArgs = {}): Promise<GalleryPage> {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (sid) params.set("sid", sid);
   return apiFetch<GalleryPage>(`/api/gallery?${params.toString()}`);
+}
+
+export interface GalleryOverviewItem {
+  sid: string;
+  label: string;
+  role: string;
+  quota_bytes: number | null;
+  used_bytes: number;
+  count: number;
+}
+
+export interface GalleryOverviewResponse {
+  items: GalleryOverviewItem[];
+}
+
+export function getGalleryOverview(): Promise<GalleryOverviewResponse> {
+  return apiFetch<GalleryOverviewResponse>("/api/gallery/overview");
+}
+
+export interface SharePassword {
+  id: string;
+  label: string;
+  role: string;
+  quota_bytes: number;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+  used_bytes?: number;
+  count?: number;
+}
+
+export interface SharePasswordInput {
+  label?: string;
+  password: string;
+  quota_bytes?: number;
+}
+
+export interface SharePasswordPatch {
+  label?: string;
+  password?: string;
+  quota_bytes?: number;
+  enabled?: boolean;
+}
+
+export interface SharePasswordListResponse {
+  items: SharePassword[];
+}
+
+export function listSharePasswords(): Promise<SharePasswordListResponse> {
+  return apiFetch<SharePasswordListResponse>("/api/share-passwords");
+}
+
+export function createSharePassword(body: SharePasswordInput): Promise<SharePassword> {
+  return apiFetch<SharePassword>("/api/share-passwords", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+export function updateSharePassword(id: string, patch: SharePasswordPatch): Promise<SharePassword> {
+  return apiFetch<SharePassword>(`/api/share-passwords/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch)
+  });
+}
+
+export function deleteSharePassword(id: string): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/share-passwords/${encodeURIComponent(id)}`, {
+    method: "DELETE"
+  });
 }
 
 export function deleteAsset(id: string): Promise<{ ok: boolean; id: string }> {
@@ -118,11 +192,20 @@ export function deleteAsset(id: string): Promise<{ ok: boolean; id: string }> {
   });
 }
 
-export function clearGallery(): Promise<{ ok: boolean; deleted_images: number; deleted_thumbs: number }> {
+export function clearGallery(sid?: string): Promise<{ ok: boolean }> {
   return apiFetch("/api/gallery/clear", {
     method: "POST",
-    body: JSON.stringify({ confirm: true })
+    body: JSON.stringify(sid ? { confirm: true, sid } : { confirm: true })
   });
+}
+
+export interface AuthMe {
+  role: "owner" | "friend";
+  sid?: string;
+}
+
+export function getMe(): Promise<AuthMe> {
+  return apiFetch<AuthMe>("/api/auth/me");
 }
 
 export function uploadThumb(id: string, image: string, mime = "image/webp"): Promise<{ ok: boolean; id: string; thumb_url: string }> {

@@ -6,6 +6,7 @@ import { nowIso } from "../lib/time";
 import { readJson } from "../lib/json";
 import { requireSession, requireOrigin } from "./guard";
 import { getWorkspaceSettings, type WorkspaceAccountMode } from "../pool/workspace";
+import { shareQuotaFor, usedBytesFor } from "../db/sharePasswords";
 import type { AccountStrategy } from "../db/upstreams";
 import type { AppEnv } from "../types";
 
@@ -112,7 +113,8 @@ export async function persistGeneration(
   env: AppEnv["Bindings"],
   canonical: CanonicalRequest,
   result: PipelineResult,
-  role: string
+  role: string,
+  sid = "owner"
 ): Promise<{ generation_id: string; images: PersistedImage[] }> {
   const generationId = newId();
   const created = nowIso();
@@ -127,7 +129,7 @@ export async function persistGeneration(
   }
 
   await env.DB.prepare(
-    "INSERT INTO generations (id, key_id, role, upstream_id, account_id, params_json, status, cost_gems, created_at) VALUES (?,?,?,?,?,?,?,?,?)"
+    "INSERT INTO generations (id, key_id, role, upstream_id, account_id, params_json, status, cost_gems, created_at, owner_sid) VALUES (?,?,?,?,?,?,?,?,?,?)"
   )
     .bind(
       generationId,
@@ -138,7 +140,8 @@ export async function persistGeneration(
       JSON.stringify(canonical.params),
       result.ok ? "success" : "failed",
       result.cost_gems ?? 0,
-      created
+      created,
+      sid
     )
     .run();
 
@@ -146,9 +149,9 @@ export async function persistGeneration(
     const r2Key = `img/${image.id}`;
     await env.BUCKET.put(r2Key, image.bytes, { httpMetadata: { contentType: image.mime } });
     await env.DB.prepare(
-      "INSERT INTO assets (id, generation_id, r2_key, thumb_r2_key, mime, width, height, created_at) VALUES (?,?,?,?,?,?,?,?)"
+      "INSERT INTO assets (id, generation_id, r2_key, thumb_r2_key, mime, width, height, created_at, owner_sid, size_bytes) VALUES (?,?,?,?,?,?,?,?,?,?)"
     )
-      .bind(image.id, generationId, r2Key, null, image.mime, null, null, created)
+      .bind(image.id, generationId, r2Key, null, image.mime, null, null, created, sid, image.bytes.byteLength)
       .run();
   }
 
@@ -176,6 +179,24 @@ generate.post("/", requireOrigin, async (c) => {
   const body = await readJson<InboundBody>(c);
   const canonical = inboundToCanonical(body);
   const role = c.get("role") ?? "friend";
+  const sid = c.get("sid") ?? (role === "owner" ? "owner" : undefined);
+
+  // 配额：仅 friend 检查，超限直接 403，不调用上游（避免浪费 Gems）。
+  if (role !== "owner" && sid) {
+    const quota = await shareQuotaFor(c.env, sid);
+    if (quota !== null) {
+      const used = await usedBytesFor(c.env, sid);
+      if (used >= quota) {
+        return c.json(
+          {
+            error: "quota_exceeded",
+            message: `存储配额已用尽（${used}/${quota} 字节），请联系所有者扩容或清理画廊`
+          },
+          403
+        );
+      }
+    }
+  }
 
   // 创作台独立于网关：读取工作台设置作为默认，body 可覆盖。
   const settings = await getWorkspaceSettings(c.env);
@@ -210,7 +231,7 @@ generate.post("/", requireOrigin, async (c) => {
     );
   }
 
-  const persisted = await persistGeneration(c.env, canonical, result, role);
+  const persisted = await persistGeneration(c.env, canonical, result, role, sid ?? "owner");
   return c.json({
     generation_id: persisted.generation_id,
     cost_gems: result.cost_gems ?? null,

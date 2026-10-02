@@ -14,6 +14,7 @@ import {
   IconGallery,
   IconHistory,
   IconKey,
+  IconLock,
   IconLog,
   IconLogo,
   IconMenu,
@@ -51,6 +52,7 @@ const NAV_GROUPS: NavGroup[] = [
     ownerOnly: true,
     items: [
       { to: "/console/accounts", label: "账号池", icon: <IconWallet className="size-4.5" /> },
+      { to: "/console/share-passwords", label: "分享密码", icon: <IconLock className="size-4.5" /> },
       { to: "/console/api-keys", label: "API 密钥", icon: <IconKey className="size-4.5" /> },
       { to: "/console/checkin", label: "签到设置", icon: <IconCalendar className="size-4.5" /> },
       { to: "/console/upstreams", label: "上游", icon: <IconServer className="size-4.5" /> },
@@ -65,6 +67,7 @@ const CRUMB_LABELS: Record<string, string> = {
   "/console/playground": "创作台",
   "/console/history": "本地历史",
   "/console/accounts": "账号池",
+  "/console/share-passwords": "分享密码",
   "/console/api-keys": "API 密钥",
   "/console/checkin": "签到设置",
   "/console/upstreams": "上游",

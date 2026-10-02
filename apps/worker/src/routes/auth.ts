@@ -6,6 +6,7 @@ import {
   verifySession,
   type Role
 } from "../lib/session";
+import { verifySharePassword } from "../db/sharePasswords";
 import type { AppEnv } from "../types";
 
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
@@ -38,17 +39,25 @@ auth.post("/login", async (c) => {
   const password = body.password ?? "";
 
   const owner = c.env.OWNER_PASSWORD ?? "";
-  const friend = c.env.FRIEND_PASSWORD ?? "";
 
   let role: Role | null = null;
-  if (owner && timingSafeEqual(password, owner)) role = "owner";
-  else if (friend && timingSafeEqual(password, friend)) role = "friend";
+  let sid: string | undefined;
+  if (owner && timingSafeEqual(password, owner)) {
+    role = "owner";
+    sid = "owner";
+  } else {
+    const share = await verifySharePassword(c.env, password);
+    if (share) {
+      role = share.role === "owner" ? "owner" : "friend";
+      sid = share.id;
+    }
+  }
 
-  if (!role) return c.json({ error: "invalid_password" }, 401);
+  if (!role || !sid) return c.json({ error: "invalid_password" }, 401);
 
   const now = Math.floor(Date.now() / 1000);
   const token = await signSession(
-    { role, iat: now, exp: now + SESSION_TTL_SECONDS },
+    { role, sid, iat: now, exp: now + SESSION_TTL_SECONDS },
     c.env.SESSION_SECRET
   );
 
@@ -56,7 +65,7 @@ auth.post("/login", async (c) => {
     ...cookieOptions(c.env),
     maxAge: SESSION_TTL_SECONDS
   });
-  return c.json({ role });
+  return c.json({ role, sid });
 });
 
 auth.post("/logout", (c) => {
@@ -67,7 +76,7 @@ auth.post("/logout", (c) => {
 auth.get("/me", async (c) => {
   const role = c.get("role");
   if (!role) return c.json({ error: "unauthorized" }, 401);
-  return c.json({ role });
+  return c.json({ role, sid: c.get("sid") });
 });
 
 export async function sessionMiddleware(
@@ -77,7 +86,10 @@ export async function sessionMiddleware(
   const token = getCookie(c, SESSION_COOKIE);
   if (token) {
     const payload = await verifySession(token, c.env.SESSION_SECRET);
-    if (payload) c.set("role", payload.role);
+    if (payload) {
+      c.set("role", payload.role);
+      c.set("sid", payload.sid ?? (payload.role === "owner" ? "owner" : undefined));
+    }
   }
   await next();
 }

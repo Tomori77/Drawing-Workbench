@@ -8,6 +8,7 @@ import { rewriteRules } from "./routes/rewriteRules";
 import { generate } from "./routes/generate";
 import { generateOptions } from "./routes/generateOptions";
 import { gallery } from "./routes/gallery";
+import { sharePasswords } from "./routes/sharePasswords";
 import { logs } from "./routes/logs";
 import { profile } from "./routes/profile";
 import { gatewayV1, gatewayGenerateRoute } from "./routes/gateway";
@@ -29,6 +30,7 @@ app.route("/api/rewrite-rules", rewriteRules);
 app.route("/api/generate/options", generateOptions);
 app.route("/api/generate", generate);
 app.route("/api/gallery", gallery);
+app.route("/api/share-passwords", sharePasswords);
 app.route("/api/logs", logs);
 app.route("/api/profile", profile);
 
