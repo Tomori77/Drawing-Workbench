@@ -9,9 +9,12 @@ compatibility_flags = ["nodejs_compat"]
 command = "pnpm --filter @drawing-workbench/web build"
 
 # 静态资源：指向 web 构建产物（由上面的 [build] 自动生成）。
+# run_worker_first=true：所有请求先经 Worker，由 staticGate 做门禁分流
+# （静态子资源放行、未登录的文档导航重定向 /login，SPA 路由回退 index.html）。
 [assets]
 directory = "../web/dist"
 binding = "ASSETS"
+run_worker_first = true
 
 # 非敏感变量占位；敏感值（OWNER_PASSWORD / FRIEND_PASSWORD / SESSION_SECRET）
 # 通过 `wrangler secret put` 写入，不写进本文件。

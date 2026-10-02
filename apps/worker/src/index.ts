@@ -8,6 +8,7 @@ import { rewriteRules } from "./routes/rewriteRules";
 import { generate } from "./routes/generate";
 import { gallery } from "./routes/gallery";
 import { gatewayV1, gatewayGenerateRoute } from "./routes/gateway";
+import { staticGate } from "./routes/staticGate";
 import { runScheduled } from "./checkin/run";
 import type { AppEnv, Env } from "./types";
 
@@ -31,6 +32,8 @@ app.route("/generate", gatewayGenerateRoute);
 app.get("/api/health", (c) =>
   c.json({ ok: true, env: c.env.APP_ENV ?? "production" })
 );
+
+app.get("*", staticGate);
 
 app.notFound((c) => c.json({ error: "not_found" }, 404));
 app.onError((err, c) => {
