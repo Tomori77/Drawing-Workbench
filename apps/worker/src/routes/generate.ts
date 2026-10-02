@@ -63,12 +63,28 @@ export function parseSize(size: string | undefined): { width: number; height: nu
 export function inboundToCanonical(body: InboundBody): CanonicalRequest {
   const positives = asStringArray(body.prompt);
   const inputs = asStringArray(body.input);
-  const positive = (positives.length ? positives : inputs).join(", ");
+  let positive = (positives.length ? positives : inputs).join(", ");
   const srcParams =
     body.parameters && typeof body.parameters === "object" && !Array.isArray(body.parameters)
       ? body.parameters
       : {};
   const params: Record<string, unknown> = { ...srcParams };
+
+  // 画师串：拼接进正向提示词最前，不作为上游参数（上游不接受 artist 字段）。
+  const artist = typeof params.artist === "string" ? params.artist.trim() : "";
+  if (artist && !positive.startsWith(artist)) {
+    positive = `${artist}, ${positive}`;
+  }
+  delete params.artist;
+
+  // 网关专用字段：cfg 仅作 scale 回退；nocache 丢弃。均不进入上游参数。
+  if (params.scale === undefined && params.cfg !== undefined) {
+    const cfg = Number(params.cfg);
+    if (Number.isFinite(cfg) && cfg > 0) params.scale = cfg;
+  }
+  delete params.cfg;
+  delete params.cfg_scale;
+  delete params.nocache;
 
   const negative = typeof body.negative_prompt === "string" ? body.negative_prompt : undefined;
   if (negative !== undefined) params.negative_prompt = negative;

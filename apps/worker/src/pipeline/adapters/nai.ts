@@ -26,6 +26,32 @@ const NAI_DEFAULTS: Record<string, unknown> = {
   negative_prompt: ""
 };
 
+// NAI 真正接受的生图参数白名单。网关协议里的字段（nocache/cfg/artist 等）
+// 绝不能透传给上游，否则上游返回 502。此处按白名单过滤，作为最后一道防线。
+const NAI_PARAM_KEYS = [
+  "width",
+  "height",
+  "steps",
+  "scale",
+  "seed",
+  "sampler",
+  "noise_schedule",
+  "negative_prompt",
+  "n_samples",
+  "image",
+  "mask",
+  "strength",
+  "noise"
+] as const;
+
+function pickNaiParams(params: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of NAI_PARAM_KEYS) {
+    if (params[key] !== undefined && params[key] !== null) out[key] = params[key];
+  }
+  return out;
+}
+
 export const naiAdapter: Adapter = {
   type: "nai-compatible",
 
@@ -34,9 +60,14 @@ export const naiAdapter: Adapter = {
     upstream: UpstreamConfig,
     credential: Credential
   ): UpstreamRequest {
+    // artist（画师串）应置于正向提示词最前；入站若已拼接则此处不再重复。
+    const artist = typeof canonical.params.artist === "string" ? canonical.params.artist.trim() : "";
+    const positive = canonical.prompt.positive || "";
+    const composed = artist && !positive.startsWith(artist) ? `${artist}, ${positive}` : positive;
+
     const parameters: Record<string, unknown> = {
       ...NAI_DEFAULTS,
-      ...canonical.params,
+      ...pickNaiParams(canonical.params),
       negative_prompt: canonical.prompt.negative || canonical.params.negative_prompt || "",
       n_samples: canonical.n
     };
@@ -44,7 +75,7 @@ export const naiAdapter: Adapter = {
     const body = {
       model: canonical.model,
       action: NAI_ACTION_MAP[canonical.action] ?? canonical.action,
-      input: [canonical.prompt.positive],
+      input: [composed],
       parameters
     };
 

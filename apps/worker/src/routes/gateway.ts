@@ -101,23 +101,27 @@ function queryInboundToCanonical(url: URL): CanonicalRequest {
   }
   const steps = q.get("steps");
   if (steps) params.steps = Number(steps);
+  // cfg 仅作为 scale 的回退；不进入上游参数（上游不接受 cfg）。
   const scale = q.get("scale") ?? q.get("cfg");
-  if (scale) params.scale = Number(scale);
+  if (scale && Number(scale)) params.scale = Number(scale);
   const sampler = q.get("sampler");
   if (sampler) params.sampler = sampler;
   const noise = q.get("noise_schedule");
   if (noise) params.noise_schedule = noise;
   const negative = q.get("negative");
   if (negative) params.negative_prompt = negative;
-  const nocache = q.get("nocache");
-  if (nocache) params.nocache = nocache;
   params.n_samples = 1;
+
+  // 画师串：拼接进正向提示词最前，不作为上游参数。
+  const artist = (q.get("artist") ?? "").trim();
+  const tag = q.get("tag") ?? q.get("prompt") ?? "";
+  const positive = artist && !tag.startsWith(artist) ? `${artist}, ${tag}` : tag;
 
   return {
     model: q.get("model") || DEFAULT_MODEL,
     action: q.get("action") || "generate",
     prompt: {
-      positive: q.get("tag") ?? q.get("prompt") ?? "",
+      positive,
       negative: negative ?? ""
     },
     params,
