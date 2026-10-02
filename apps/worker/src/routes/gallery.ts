@@ -181,17 +181,30 @@ gallery.get("/", async (c) => {
   return c.json({ items, total: totalRow?.c ?? items.length, limit, offset });
 });
 
-// owner 总览：owner 一行 + 每个分享密码一行。
+// owner 总览：owner 一行 + 每个分享密码一行，附图片用量与配方/画师串数量。
 gallery.get("/overview", requireOwner, async (c) => {
   const shares = await listSharePasswords(c.env);
-  const { results } = await c.env.DB.prepare(
-    "SELECT owner_sid, COALESCE(SUM(size_bytes),0) AS used_bytes, COUNT(*) AS count FROM assets GROUP BY owner_sid"
-  ).all<{ owner_sid: string; used_bytes: number; count: number }>();
+  const [assetRes, presetRes] = await Promise.all([
+    c.env.DB.prepare(
+      "SELECT owner_sid, COALESCE(SUM(size_bytes),0) AS used_bytes, COUNT(*) AS count FROM assets GROUP BY owner_sid"
+    ).all<{ owner_sid: string; used_bytes: number; count: number }>(),
+    c.env.DB.prepare(
+      "SELECT owner_sid, kind, COUNT(*) AS c FROM presets GROUP BY owner_sid, kind"
+    ).all<{ owner_sid: string; kind: string; c: number }>()
+  ]);
   const stats = new Map<string, { used_bytes: number; count: number }>();
-  for (const row of results ?? []) {
+  for (const row of assetRes.results ?? []) {
     stats.set(row.owner_sid, { used_bytes: row.used_bytes ?? 0, count: row.count ?? 0 });
   }
+  const presetCounts = new Map<string, { recipe_count: number; artist_count: number }>();
+  for (const row of presetRes.results ?? []) {
+    const entry = presetCounts.get(row.owner_sid) ?? { recipe_count: 0, artist_count: 0 };
+    if (row.kind === "recipe") entry.recipe_count = row.c ?? 0;
+    else if (row.kind === "artist") entry.artist_count = row.c ?? 0;
+    presetCounts.set(row.owner_sid, entry);
+  }
   const ownerStat = stats.get(OWNER_SID);
+  const ownerPresets = presetCounts.get(OWNER_SID) ?? { recipe_count: 0, artist_count: 0 };
   const items = [
     {
       sid: OWNER_SID,
@@ -199,17 +212,22 @@ gallery.get("/overview", requireOwner, async (c) => {
       role: "owner",
       quota_bytes: null as number | null,
       used_bytes: ownerStat?.used_bytes ?? 0,
-      count: ownerStat?.count ?? 0
+      count: ownerStat?.count ?? 0,
+      recipe_count: ownerPresets.recipe_count,
+      artist_count: ownerPresets.artist_count
     },
     ...shares.map((share) => {
       const stat = stats.get(share.id);
+      const preset = presetCounts.get(share.id) ?? { recipe_count: 0, artist_count: 0 };
       return {
         sid: share.id,
         label: share.label || "未命名",
         role: share.role,
         quota_bytes: share.quota_bytes as number | null,
         used_bytes: stat?.used_bytes ?? 0,
-        count: stat?.count ?? 0
+        count: stat?.count ?? 0,
+        recipe_count: preset.recipe_count,
+        artist_count: preset.artist_count
       };
     })
   ];

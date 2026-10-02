@@ -18,8 +18,7 @@ import {
   useUpdateSharePassword
 } from "../hooks/useSharePasswords";
 import { useGalleryOverview } from "../hooks/useGallery";
-import { usePresets, usePresetsOverview } from "../hooks/usePresets";
-import type { PresetKind, SharePassword, SharePasswordInput } from "../lib/api";
+import type { SharePassword, SharePasswordInput } from "../lib/api";
 
 const MB = 1024 * 1024;
 
@@ -34,18 +33,15 @@ function formatBytes(bytes: number | null | undefined): string {
 export default function SharePasswords() {
   const listQuery = useSharePasswords();
   const overviewQuery = useGalleryOverview();
-  const presetsOverviewQuery = usePresetsOverview();
   const updateMutation = useUpdateSharePassword();
   const deleteMutation = useDeleteSharePassword();
 
   const items = listQuery.data?.items ?? [];
   const overview = overviewQuery.data?.items ?? [];
-  const presetsOverview = presetsOverviewQuery.data?.items ?? [];
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<SharePassword | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SharePassword | null>(null);
-  const [presetView, setPresetView] = useState<{ sid: string; label: string } | null>(null);
 
   const openCreate = () => {
     setEditTarget(null);
@@ -93,6 +89,8 @@ export default function SharePasswords() {
                       <th className="px-4 py-3 font-medium text-right">已用</th>
                       <th className="px-4 py-3 font-medium text-right">配额</th>
                       <th className="px-4 py-3 font-medium text-right">图片数</th>
+                      <th className="px-4 py-3 font-medium text-right">配方</th>
+                      <th className="px-4 py-3 font-medium text-right">画师串</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -127,58 +125,11 @@ export default function SharePasswords() {
                             {formatBytes(row.quota_bytes)}
                           </td>
                           <td className="px-4 py-3 text-right tabular-nums">{row.count}</td>
+                          <td className="px-4 py-3 text-right tabular-nums">{row.recipe_count}</td>
+                          <td className="px-4 py-3 text-right tabular-nums">{row.artist_count}</td>
                         </tr>
                       );
                     })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </section>
-
-        <section className="mt-8">
-          <h2 className="text-sm font-semibold text-(--color-muted)">预设总览（只读）</h2>
-          {presetsOverviewQuery.isLoading ? (
-            <p className="mt-3 text-sm text-(--color-muted-2)">加载中…</p>
-          ) : presetsOverview.length === 0 ? (
-            <p className="mt-3 text-sm text-(--color-muted-2)">暂无数据。</p>
-          ) : (
-            <div className="mt-3 overflow-hidden rounded-(--radius-card) border border-(--color-border) bg-(--color-surface-1) shadow-(--shadow-card)">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[720px] border-collapse text-sm">
-                  <thead>
-                    <tr className="border-b border-(--color-border) text-left text-xs text-(--color-muted-2)">
-                      <th className="px-4 py-3 font-medium">会话</th>
-                      <th className="px-4 py-3 font-medium">角色</th>
-                      <th className="px-4 py-3 font-medium text-right">配方</th>
-                      <th className="px-4 py-3 font-medium text-right">画师串</th>
-                      <th className="px-4 py-3 font-medium text-right">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {presetsOverview.map((row) => (
-                      <tr key={row.sid} className="border-b border-(--color-border) last:border-b-0">
-                        <td className="px-4 py-3">
-                          <div className="font-medium">{row.label}</div>
-                          <div className="font-mono text-xs text-(--color-muted-2)">
-                            {row.sid === "owner" ? "owner" : `${row.sid.slice(0, 8)}…`}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-(--color-muted)">{row.role}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{row.recipe_count}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{row.artist_count}</td>
-                        <td className="px-4 py-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => setPresetView({ sid: row.sid, label: row.label })}
-                            className="rounded-full border border-(--color-border) px-3 py-1 text-xs text-(--color-muted) transition-colors hover:border-(--color-border-strong) hover:text-(--color-text)"
-                          >
-                            查看预设
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
                   </tbody>
                 </table>
               </div>
@@ -317,96 +268,7 @@ export default function SharePasswords() {
           });
         }}
       />
-
-      <PresetViewDialog
-        target={presetView}
-        onOpenChange={(open) => {
-          if (!open) setPresetView(null);
-        }}
-      />
     </ConsoleShell>
-  );
-}
-
-function PresetList({
-  sid,
-  kind,
-  heading
-}: {
-  sid: string;
-  kind: PresetKind;
-  heading: string;
-}) {
-  const query = usePresets(kind, sid);
-  const list = query.data?.items ?? [];
-  return (
-    <div className="mt-3">
-      <h3 className="text-xs font-semibold text-(--color-muted)">
-        {heading}（{list.length}）
-      </h3>
-      {query.isLoading ? (
-        <p className="mt-2 text-xs text-(--color-muted-2)">加载中…</p>
-      ) : list.length === 0 ? (
-        <p className="mt-2 text-xs text-(--color-muted-2)">暂无。</p>
-      ) : (
-        <ul className="mt-2 flex flex-col gap-2">
-          {list.map((item) => (
-            <li key={item.id} className="rounded-(--radius-input) border border-(--color-border) p-2.5">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <span>{item.name}</span>
-                {item.builtin && (
-                  <span className="rounded-full border border-(--color-border) px-2 py-0.5 text-[10px] text-(--color-muted-2)">
-                    内置
-                  </span>
-                )}
-              </div>
-              {kind === "artist" ? (
-                <p className="mt-1 text-[11px] leading-relaxed break-words whitespace-pre-wrap text-(--color-muted-2)">
-                  {item.content}
-                </p>
-              ) : (
-                <p className="mt-1 text-[11px] text-(--color-muted-2)">
-                  {item.payload?.model ? String(item.payload.model) : "参数快照"}
-                </p>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function PresetViewDialog({
-  target,
-  onOpenChange
-}: {
-  target: { sid: string; label: string } | null;
-  onOpenChange: (open: boolean) => void;
-}) {
-  return (
-    <DialogShell
-      open={target !== null}
-      onOpenChange={onOpenChange}
-      title={target ? `${target.label} 的预设` : "预设"}
-      description="只读查看该会话的配方与画师串。"
-    >
-      {target && (
-        <div className="flex max-h-[60dvh] flex-col gap-4 overflow-y-auto">
-          <PresetList sid={target.sid} kind="recipe" heading="配方" />
-          <PresetList sid={target.sid} kind="artist" heading="画师串" />
-        </div>
-      )}
-      <div className="mt-6 flex justify-end">
-        <button
-          type="button"
-          onClick={() => onOpenChange(false)}
-          className="inline-flex h-9 items-center rounded-full border border-(--color-border) bg-(--color-surface-1) px-4 text-sm transition-colors hover:border-(--color-border-strong)"
-        >
-          关闭
-        </button>
-      </div>
-    </DialogShell>
   );
 }
 

@@ -8,6 +8,7 @@ import {
 } from "../db/sharePasswords";
 import { readJson } from "../lib/json";
 import { deletePresetsForSid, ensureBuiltinArtists } from "../db/presets";
+import { invalidateSid } from "../pool/sessionCheck";
 import { requireOrigin, requireOwner } from "./guard";
 import type { AppEnv } from "../types";
 
@@ -86,6 +87,8 @@ sharePasswords.patch("/:id", requireOrigin, async (c) => {
   if (body.enabled !== undefined) patch.enabled = body.enabled === true;
   const updated = await updateSharePassword(c.env, id, patch);
   if (!updated) return c.json({ error: "not_found" }, 404);
+  // 无论改密码还是改启用状态，都清缓存让其下次重新判定有效性。
+  await invalidateSid(c.env, id);
   return c.json(updated);
 });
 
@@ -95,5 +98,6 @@ sharePasswords.delete("/:id", requireOrigin, async (c) => {
   const id = c.req.param("id");
   await deleteSharePassword(c.env, id);
   await deletePresetsForSid(c.env, id);
+  await invalidateSid(c.env, id);
   return c.json({ ok: true });
 });

@@ -235,6 +235,8 @@ export interface GalleryOverviewItem {
   quota_bytes: number | null;
   used_bytes: number;
   count: number;
+  recipe_count: number;
+  artist_count: number;
 }
 
 export interface GalleryOverviewResponse {

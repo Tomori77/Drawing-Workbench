@@ -7,6 +7,7 @@ import {
   type Role
 } from "../lib/session";
 import { verifySharePassword } from "../db/sharePasswords";
+import { isSidActive } from "../pool/sessionCheck";
 import type { AppEnv } from "../types";
 
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
@@ -87,8 +88,15 @@ export async function sessionMiddleware(
   if (token) {
     const payload = await verifySession(token, c.env.SESSION_SECRET);
     if (payload) {
-      c.set("role", payload.role);
-      c.set("sid", payload.sid ?? (payload.role === "owner" ? "owner" : undefined));
+      const sid = payload.sid ?? (payload.role === "owner" ? "owner" : undefined);
+      // friend 会话需校验其分享密码仍存在且启用；owner 不查库。
+      // 失效时等同未登录并清除 Cookie，前端 /api/auth/me 401 后回退密码页。
+      if (payload.role === "owner" || (sid !== undefined && (await isSidActive(c.env, sid)))) {
+        c.set("role", payload.role);
+        c.set("sid", sid);
+      } else {
+        deleteCookie(c, SESSION_COOKIE, cookieOptions(c.env));
+      }
     }
   }
   await next();
