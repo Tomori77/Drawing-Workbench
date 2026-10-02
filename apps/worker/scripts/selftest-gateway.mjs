@@ -83,7 +83,7 @@ function makeD1() {
 }
 
 async function applyMigrations(db) {
-  for (const name of ["0001_init.sql", "0002_gateway.sql", "0003_checkin.sql", "0005_account_usage.sql"]) {
+  for (const name of ["0001_init.sql", "0002_gateway.sql", "0003_checkin.sql", "0005_account_usage.sql", "0008_api_key_plaintext.sql"]) {
     const sql = await readFile(path.join(here, "..", "migrations", name), "utf8");
     db.exec(sql);
   }

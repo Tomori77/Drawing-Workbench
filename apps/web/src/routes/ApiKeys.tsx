@@ -18,6 +18,7 @@ import {
   useUpdateApiKey
 } from "../hooks/useApiKeys";
 import { useModels, useUpstreams } from "../hooks/useUpstreams";
+import { copyText } from "../lib/clipboard";
 import type { ApiKeyInput, ApiKeyPolicy, ApiKeyPublic } from "../lib/api";
 
 const ROLE_OPTIONS = [
@@ -65,6 +66,40 @@ function toLocalInput(iso: string | null): string {
 
 function policyOf(key: ApiKeyPublic): ApiKeyPolicy {
   return key.policy ?? {};
+}
+
+function maskKey(key: string): string {
+  if (key.length <= 12) return key;
+  return `${key.slice(0, 8)}…${key.slice(-4)}`;
+}
+
+function CopyButton({ value, label = "复制" }: { value: string; label?: string }) {
+  const [notice, setNotice] = useState<"ok" | "fail" | null>(null);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), 1500);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  return (
+    <span className="inline-flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => void copyText(value).then((ok) => setNotice(ok ? "ok" : "fail"))}
+        className="shrink-0 rounded-full border border-(--color-border) px-3 py-1 text-xs text-(--color-muted) transition-colors hover:border-(--color-border-strong) hover:text-(--color-text)"
+      >
+        {label}
+      </button>
+      {notice && (
+        <span
+          className={`text-xs ${notice === "ok" ? "text-(--color-success)" : "text-(--color-warning)"}`}
+        >
+          {notice === "ok" ? "已复制" : "复制失败"}
+        </span>
+      )}
+    </span>
+  );
 }
 
 export default function ApiKeys() {
@@ -139,6 +174,7 @@ export default function ApiKeys() {
                   <thead>
                     <tr className="border-b border-(--color-border) text-left text-xs text-(--color-muted-2)">
                       <th className="px-4 py-3 font-medium">名称</th>
+                      <th className="px-4 py-3 font-medium">密钥</th>
                       <th className="px-4 py-3 font-medium">角色</th>
                       <th className="px-4 py-3 font-medium">模式</th>
                       <th className="px-4 py-3 font-medium text-right">已用 / 额度</th>
@@ -159,6 +195,9 @@ export default function ApiKeys() {
                             <div className="font-mono text-xs text-(--color-muted-2)">
                               {key.id.slice(0, 8)}…
                             </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <ApiKeyCell apiKey={key} />
                           </td>
                           <td className="px-4 py-3 text-(--color-muted)">{key.role}</td>
                           <td className="px-4 py-3">
@@ -248,6 +287,35 @@ export default function ApiKeys() {
         }}
       />
     </ConsoleShell>
+  );
+}
+
+function ApiKeyCell({ apiKey }: { apiKey: ApiKeyPublic }) {
+  const [revealed, setRevealed] = useState(false);
+  const value = apiKey.key ?? null;
+
+  if (!value) {
+    return (
+      <span className="text-xs text-(--color-muted-2)">（不可查看，请删除后重建）</span>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <code className="break-all font-mono text-xs">
+        {revealed ? value : maskKey(value)}
+      </code>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setRevealed((prev) => !prev)}
+          className="rounded-full border border-(--color-border) px-3 py-1 text-xs text-(--color-muted) transition-colors hover:border-(--color-border-strong) hover:text-(--color-text)"
+        >
+          {revealed ? "隐藏" : "显示"}
+        </button>
+        <CopyButton value={value} />
+      </div>
+    </div>
   );
 }
 
@@ -402,29 +470,23 @@ function ApiKeyDialog({
       open={open}
       onOpenChange={close}
       title={editing ? "编辑密钥" : createdKey ? "密钥已创建" : "创建密钥"}
-      description={editing ? undefined : "密钥明文仅在创建成功后显示一次，请及时保存。"}
+      description={editing ? undefined : "密钥明文可在列表中随时查看与复制。"}
     >
       {createdKey ? (
         <div className="flex flex-col gap-4">
           <div className="rounded-(--radius-input) border border-(--color-success)/40 bg-(--color-success)/10 p-4">
             <p className="text-xs font-medium text-(--color-success)">
-              仅显示一次，请立即复制保存
+              密钥已创建，可随时在列表中复制
             </p>
             <div className="mt-2 flex items-center gap-2">
               <code className="min-w-0 flex-1 break-all rounded-(--radius-input) bg-(--color-surface-2) px-3 py-2 font-mono text-xs">
                 {createdKey}
               </code>
-              <button
-                type="button"
-                onClick={() => void navigator.clipboard?.writeText(createdKey)}
-                className="shrink-0 rounded-full border border-(--color-border) px-3 py-1.5 text-xs transition-colors hover:border-(--color-border-strong)"
-              >
-                复制
-              </button>
+              <CopyButton value={createdKey} />
             </div>
           </div>
           <p className="text-xs text-(--color-muted-2)">
-            关闭后将无法再次查看该密钥，如需重置请删除后重新创建。
+            列表中默认掩码显示，可点击「显示」查看完整密钥。
           </p>
           <DialogActions
             pending={false}

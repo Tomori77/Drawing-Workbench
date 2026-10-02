@@ -1,5 +1,5 @@
 import type { Env } from "../types";
-import { sha256Hex } from "../lib/crypto";
+import { decrypt, encrypt, sha256Hex } from "../lib/crypto";
 import { randomKey, newId } from "../lib/ids";
 import { nowIso } from "../lib/time";
 import { parseJson } from "../lib/json";
@@ -9,6 +9,7 @@ export const API_KEY_PREFIX = "dwb-";
 export interface ApiKeyRow {
   id: string;
   key_hash: string;
+  key_enc: string | null;
   name: string | null;
   role: string;
   mode: string;
@@ -37,6 +38,7 @@ export interface ApiKeyPublic {
   expires_at: string | null;
   enabled: boolean;
   created_at: string;
+  key?: string | null;
 }
 
 export interface ApiKeyInput {
@@ -79,12 +81,14 @@ export async function createApiKey(env: Env, input: ApiKeyInput): Promise<Create
   const id = newId();
   const key = randomKey(API_KEY_PREFIX);
   const keyHash = await sha256Hex(key);
+  const keyEnc = await encrypt(key, env.ENCRYPTION_KEY, "apikeys");
   await env.DB.prepare(
-    "INSERT INTO api_keys (id, key_hash, name, role, mode, policy_json, allowed_models_json, allowed_upstreams_json, quota, used_count, rate_limit, expires_at, enabled, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+    "INSERT INTO api_keys (id, key_hash, key_enc, name, role, mode, policy_json, allowed_models_json, allowed_upstreams_json, quota, used_count, rate_limit, expires_at, enabled, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
   )
     .bind(
       id,
       keyHash,
+      keyEnc,
       input.name ?? null,
       input.role ?? "friend",
       input.mode ?? "restricted",
@@ -112,11 +116,27 @@ export async function getApiKeyByKey(env: Env, plainKey: string): Promise<ApiKey
   return env.DB.prepare("SELECT * FROM api_keys WHERE key_hash=?").bind(keyHash).first<ApiKeyRow>();
 }
 
-export async function listApiKeys(env: Env): Promise<ApiKeyPublic[]> {
+export async function getApiKeyPlaintext(
+  env: Env,
+  row: Pick<ApiKeyRow, "key_enc">
+): Promise<string | null> {
+  if (!row.key_enc) return null;
+  try {
+    return await decrypt(row.key_enc, env.ENCRYPTION_KEY, "apikeys");
+  } catch {
+    return null;
+  }
+}
+
+export async function listApiKeyRows(env: Env): Promise<ApiKeyRow[]> {
   const { results } = await env.DB.prepare(
     "SELECT * FROM api_keys ORDER BY created_at DESC"
   ).all<ApiKeyRow>();
-  return (results ?? []).map(toApiKeyPublic);
+  return results ?? [];
+}
+
+export async function listApiKeys(env: Env): Promise<ApiKeyPublic[]> {
+  return (await listApiKeyRows(env)).map(toApiKeyPublic);
 }
 
 export async function updateApiKey(

@@ -3,10 +3,13 @@ import {
   createApiKey,
   deleteApiKey,
   getApiKey,
-  listApiKeys,
+  getApiKeyPlaintext,
+  listApiKeyRows,
   toApiKeyPublic,
   updateApiKey,
-  type ApiKeyInput
+  type ApiKeyInput,
+  type ApiKeyPublic,
+  type ApiKeyRow
 } from "../db/apiKeys";
 import { readJson } from "../lib/json";
 import { requireOrigin, requireOwner } from "./guard";
@@ -16,12 +19,21 @@ export const keys = new Hono<AppEnv>();
 
 keys.use("*", requireOwner);
 
-keys.get("/", async (c) => c.json({ items: await listApiKeys(c.env) }));
+// 明文仅出现在 owner 接口，且绝不写入日志。
+async function withPlaintext(env: AppEnv["Bindings"], row: ApiKeyRow): Promise<ApiKeyPublic> {
+  return { ...toApiKeyPublic(row), key: await getApiKeyPlaintext(env, row) };
+}
+
+keys.get("/", async (c) => {
+  const rows = await listApiKeyRows(c.env);
+  const items = await Promise.all(rows.map((row) => withPlaintext(c.env, row)));
+  return c.json({ items });
+});
 
 keys.get("/:id", async (c) => {
   const row = await getApiKey(c.env, c.req.param("id"));
   if (!row) return c.json({ error: "not_found" }, 404);
-  return c.json(toApiKeyPublic(row));
+  return c.json(await withPlaintext(c.env, row));
 });
 
 keys.post("/", requireOrigin, async (c) => {

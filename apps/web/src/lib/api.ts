@@ -680,6 +680,7 @@ export interface ApiKeyPublic {
   expires_at: string | null;
   enabled: boolean;
   created_at: string;
+  key?: string | null;
 }
 
 export interface ApiKeyInput {
