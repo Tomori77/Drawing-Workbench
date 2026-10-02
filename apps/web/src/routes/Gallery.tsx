@@ -21,16 +21,6 @@ function formatSize(item: Pick<GalleryItem, "width" | "height">): string {
   return "尺寸未知";
 }
 
-const MB = 1024 * 1024;
-
-function formatBytes(bytes: number | null | undefined): string {
-  if (bytes === null || bytes === undefined) return "不限";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < MB) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * MB) return `${(bytes / MB).toFixed(1)} MB`;
-  return `${(bytes / (1024 * MB)).toFixed(2)} GB`;
-}
-
 function formatTime(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
@@ -181,47 +171,6 @@ export default function Gallery() {
             />
           </div>
         </section>
-
-        {isOwner && overview.length > 0 && (
-          <section className="mx-auto w-full max-w-[1180px] px-5 pb-10 sm:px-8">
-            <h2 className="text-sm font-semibold text-(--color-muted)">画廊总览</h2>
-            <div className="mt-3 overflow-hidden rounded-(--radius-card) border border-(--color-border) bg-(--color-surface-1) shadow-(--shadow-card)">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[860px] border-collapse text-sm">
-                  <thead>
-                    <tr className="border-b border-(--color-border) text-left text-xs text-(--color-muted-2)">
-                      <th className="px-4 py-3 font-medium">画廊</th>
-                      <th className="px-4 py-3 font-medium">角色</th>
-                      <th className="px-4 py-3 font-medium text-right">图片数</th>
-                      <th className="px-4 py-3 font-medium text-right">已用 / 配额</th>
-                      <th className="px-4 py-3 font-medium text-right">配方</th>
-                      <th className="px-4 py-3 font-medium text-right">画师串</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {overview.map((row) => (
-                      <tr key={row.sid} className="border-b border-(--color-border) last:border-b-0">
-                        <td className="px-4 py-3">
-                          <div className="font-medium">{row.label}</div>
-                          <div className="font-mono text-xs text-(--color-muted-2)">
-                            {row.sid === "owner" ? "owner" : `${row.sid.slice(0, 8)}…`}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-(--color-muted)">{row.role}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{row.count}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">
-                          {formatBytes(row.used_bytes)} / {formatBytes(row.quota_bytes)}
-                        </td>
-                        <td className="px-4 py-3 text-right tabular-nums">{row.recipe_count}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{row.artist_count}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </section>
-        )}
 
         <section className="mx-auto w-full max-w-[1180px] px-5 pb-24 sm:px-8">
           <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
