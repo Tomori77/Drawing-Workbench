@@ -26,6 +26,72 @@ interface AssetRow {
   created_at: string;
 }
 
+interface GenerationRow {
+  id: string;
+  role: string | null;
+  upstream_id: string | null;
+  account_id: string | null;
+  params_json: string | null;
+  cost_gems: number | null;
+  created_at: string | null;
+}
+
+interface ParsedParams {
+  model: string | null;
+  action: string | null;
+  positive: string;
+  negative: string;
+  n: number | null;
+  params: Record<string, unknown>;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function numberOrNull(value: unknown): number | null {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+// 兼容新格式（完整 canonical：{model,action,prompt,params,references,n}）
+// 与旧格式（仅扁平 params，可能内含 negative_prompt）。
+function parseParamsJson(raw: string | null): ParsedParams {
+  let data: Record<string, unknown> = {};
+  try {
+    data = asRecord(JSON.parse(raw ?? "{}")) ?? {};
+  } catch {
+    data = {};
+  }
+
+  const prompt = asRecord(data.prompt);
+  const isCanonical = prompt !== null || typeof data.model === "string" || typeof data.action === "string";
+
+  if (isCanonical) {
+    const params = asRecord(data.params) ?? {};
+    return {
+      model: typeof data.model === "string" ? data.model : null,
+      action: typeof data.action === "string" ? data.action : null,
+      positive: prompt && typeof prompt.positive === "string" ? prompt.positive : "",
+      negative: prompt && typeof prompt.negative === "string" ? prompt.negative : "",
+      n: numberOrNull(data.n),
+      params
+    };
+  }
+
+  // 旧格式：整对象即参数集合，positive 无从得知，negative 取自 negative_prompt。
+  return {
+    model: null,
+    action: null,
+    positive: "",
+    negative: typeof data.negative_prompt === "string" ? data.negative_prompt : "",
+    n: numberOrNull(data.n_samples),
+    params: data
+  };
+}
+
 function assetUrl(id: string, thumb: boolean): string {
   return `/api/gallery/i/${id}${thumb ? "?t=thumb" : ""}`;
 }
@@ -165,6 +231,47 @@ gallery.get("/i/:id", async (c) => {
   headers.set("Cache-Control", IMMUTABLE_CACHE);
   headers.set("ETag", obj.httpEtag);
   return new Response(obj.body, { headers });
+});
+
+// 单图信息：合并 assets 与关联 generations，供画廊「图片信息 / 复现」使用。
+gallery.get("/:id/meta", async (c) => {
+  const id = c.req.param("id");
+  const row = await c.env.DB.prepare("SELECT * FROM assets WHERE id=?").bind(id).first<AssetRow>();
+  if (!row || !canAccess(c, row)) return c.json({ error: "not_found" }, 404);
+
+  let generation: GenerationRow | null = null;
+  if (row.generation_id) {
+    generation = await c.env.DB.prepare("SELECT id, role, upstream_id, account_id, params_json, cost_gems, created_at FROM generations WHERE id=?")
+      .bind(row.generation_id)
+      .first<GenerationRow>();
+  }
+
+  const parsed = parseParamsJson(generation?.params_json ?? null);
+  const width =
+    row.width ?? numberOrNull(parsed.params.width) ?? null;
+  const height =
+    row.height ?? numberOrNull(parsed.params.height) ?? null;
+
+  return c.json({
+    id: row.id,
+    generation_id: row.generation_id,
+    owner_sid: row.owner_sid,
+    mime: row.mime,
+    width,
+    height,
+    size_bytes: row.size_bytes,
+    created_at: row.created_at,
+    url: assetUrl(row.id, false),
+    thumb_url: row.thumb_r2_key ? assetUrl(row.id, true) : null,
+    upstream_id: generation?.upstream_id ?? null,
+    model: parsed.model,
+    action: parsed.action,
+    prompt: { positive: parsed.positive, negative: parsed.negative },
+    n: parsed.n,
+    params: parsed.params,
+    cost_gems: generation?.cost_gems ?? null,
+    role: generation?.role ?? null
+  });
 });
 
 gallery.post("/:id/thumb", requireOrigin, async (c) => {

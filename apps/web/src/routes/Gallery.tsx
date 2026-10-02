@@ -1,19 +1,22 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import * as Dialog from "@radix-ui/react-dialog";
 import { useAuth } from "../hooks/useAuth";
 import {
   useClearGallery,
   useDeleteAsset,
   useGallery,
+  useGalleryMeta,
   useGalleryOverview
 } from "../hooks/useGallery";
-import type { GalleryItem } from "../lib/api";
-import { gallerySorts } from "../lib/mock";
-import { IconLogo, IconSearch } from "../components/icons";
+import type { GalleryItem, GalleryMeta } from "../lib/api";
+import { actionTabs, gallerySorts, modelOptions, noiseScheduleOptions, samplerOptions } from "../lib/mock";
+import { IconClose, IconLogo, IconSearch } from "../components/icons";
 import Lightbox from "../components/Lightbox";
 import ConfirmDialog from "../components/ConfirmDialog";
 
-function formatSize(item: GalleryItem): string {
+function formatSize(item: Pick<GalleryItem, "width" | "height">): string {
   if (item.width && item.height) return `${item.width}×${item.height}`;
   return "尺寸未知";
 }
@@ -30,7 +33,65 @@ function formatTime(iso: string): string {
   });
 }
 
+function paramText(params: Record<string, unknown>, key: string): string {
+  return paramTextOrNull(params[key]) ?? "—";
+}
+
+function paramTextOrNull(value: unknown): string | null {
+  if (value === undefined || value === null || value === "") return null;
+  return String(value);
+}
+
+function metaSize(meta: GalleryMeta): string {
+  if (meta.width && meta.height) return `${meta.width}×${meta.height}`;
+  return "—";
+}
+
+function MetaRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-4 border-b border-(--color-border) py-2 last:border-b-0">
+      <span className="shrink-0 text-xs text-(--color-muted)">{label}</span>
+      <span className="break-all text-right text-xs text-(--color-text)">{value}</span>
+    </div>
+  );
+}
+
+function PromptBlock({
+  label,
+  value,
+  onCopy
+}: {
+  label: string;
+  value: string;
+  onCopy: (value: string) => void;
+}) {
+  return (
+    <div className="mt-3">
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="text-xs font-medium text-(--color-muted)">{label}</span>
+        <button
+          type="button"
+          disabled={!value}
+          onClick={() => onCopy(value)}
+          className="rounded-full border border-(--color-border) px-2 py-0.5 text-[11px] text-(--color-muted) transition-colors hover:border-(--color-border-strong) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          复制
+        </button>
+      </div>
+      <p className="max-h-32 overflow-y-auto rounded-(--radius-input) bg-(--color-surface-2) px-3 py-2 text-xs leading-relaxed break-words whitespace-pre-wrap text-(--color-text)">
+        {value || "—"}
+      </p>
+    </div>
+  );
+}
+
+function labelFor(options: { value: string; label: string }[], value: string | null): string {
+  if (!value) return "—";
+  return options.find((option) => option.value === value)?.label ?? value;
+}
+
 export default function Gallery() {
+  const navigate = useNavigate();
   const { data: auth } = useAuth();
   const isOwner = auth?.role === "owner";
   const [sort, setSort] = useState(gallerySorts[0].value);
@@ -42,6 +103,30 @@ export default function Gallery() {
   const [lightbox, setLightbox] = useState<GalleryItem | null>(null);
   const [pendingDelete, setPendingDelete] = useState<GalleryItem | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [menu, setMenu] = useState<{ item: GalleryItem; x: number; y: number } | null>(null);
+  const [metaId, setMetaId] = useState<string | null>(null);
+  const [copyNotice, setCopyNotice] = useState<string | null>(null);
+  const metaQuery = useGalleryMeta(metaId);
+  const meta = metaQuery.data;
+
+  useEffect(() => {
+    if (!copyNotice) return;
+    const timer = setTimeout(() => setCopyNotice(null), 1800);
+    return () => clearTimeout(timer);
+  }, [copyNotice]);
+
+  const copyText = (value: string) => {
+    if (!value) return;
+    void navigator.clipboard?.writeText(value).then(
+      () => setCopyNotice("已复制"),
+      () => setCopyNotice("复制失败")
+    );
+  };
+
+  const reproduce = () => {
+    if (!meta) return;
+    navigate("/console/playground", { state: { reproduce: meta } });
+  };
 
   const items = (galleryQuery.data?.pages ?? []).flatMap((page) => page.items);
   const total = galleryQuery.data?.pages[0]?.total ?? 0;
@@ -173,6 +258,10 @@ export default function Gallery() {
                 {items.map((item) => (
                   <article
                     key={item.id}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setMenu({ item, x: e.clientX, y: e.clientY });
+                    }}
                     className="group overflow-hidden rounded-(--radius-secondary) border border-(--color-border) bg-(--color-surface-1) shadow-(--shadow-card) transition-transform hover:-translate-y-0.5"
                   >
                     <button
@@ -273,6 +362,143 @@ export default function Gallery() {
           });
         }}
       />
+
+      <DropdownMenu.Root open={menu !== null} onOpenChange={(open) => !open && setMenu(null)}>
+        <DropdownMenu.Trigger asChild>
+          <button
+            type="button"
+            aria-hidden="true"
+            tabIndex={-1}
+            className="pointer-events-none fixed size-0"
+            style={{ left: menu?.x ?? 0, top: menu?.y ?? 0 }}
+          />
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
+            align="start"
+            sideOffset={4}
+            className="z-50 min-w-40 rounded-(--radius-input) border border-(--color-border) bg-(--color-surface-1) p-1 shadow-(--shadow-float)"
+          >
+            <DropdownMenu.Item
+              onSelect={() => {
+                if (menu) setMetaId(menu.item.id);
+              }}
+              className="flex cursor-pointer items-center rounded-lg px-2.5 py-2 text-sm outline-none data-[highlighted]:bg-(--color-surface-2)"
+            >
+              查看信息
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              onSelect={() => {
+                if (menu) setLightbox(menu.item);
+              }}
+              className="flex cursor-pointer items-center rounded-lg px-2.5 py-2 text-sm outline-none data-[highlighted]:bg-(--color-surface-2)"
+            >
+              放大
+            </DropdownMenu.Item>
+            <DropdownMenu.Item asChild>
+              <a
+                href={menu?.item.url ?? "#"}
+                download
+                className="flex cursor-pointer items-center rounded-lg px-2.5 py-2 text-sm outline-none data-[highlighted]:bg-(--color-surface-2)"
+              >
+                下载
+              </a>
+            </DropdownMenu.Item>
+            <DropdownMenu.Separator className="my-1 h-px bg-(--color-border)" />
+            <DropdownMenu.Item
+              onSelect={() => {
+                if (menu) setPendingDelete(menu.item);
+              }}
+              className="flex cursor-pointer items-center rounded-lg px-2.5 py-2 text-sm text-(--color-warning) outline-none data-[highlighted]:bg-(--color-surface-2)"
+            >
+              删除
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+
+      <Dialog.Root
+        open={metaId !== null}
+        onOpenChange={(open) => {
+          if (!open) setMetaId(null);
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm" />
+          <Dialog.Content className="fixed top-1/2 left-1/2 z-50 flex max-h-[88dvh] w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 flex-col rounded-(--radius-card) border border-(--color-border) bg-(--color-surface-1) shadow-(--shadow-float) outline-none">
+            <div className="flex shrink-0 items-center justify-between border-b border-(--color-border) px-5 py-3">
+              <Dialog.Title className="text-sm font-semibold">图片信息</Dialog.Title>
+              <Dialog.Close asChild>
+                <button
+                  type="button"
+                  aria-label="关闭"
+                  className="flex size-8 items-center justify-center rounded-(--radius-input) text-(--color-muted) transition-colors hover:bg-(--color-surface-2)"
+                >
+                  <IconClose className="size-4.5" />
+                </button>
+              </Dialog.Close>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              {metaQuery.isLoading ? (
+                <p className="py-8 text-center text-sm text-(--color-muted)">加载中…</p>
+              ) : metaQuery.isError ? (
+                <p className="py-8 text-center text-sm text-(--color-warning)">
+                  加载失败：{metaQuery.error.message}
+                </p>
+              ) : meta ? (
+                <>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-(--color-muted)">
+                    <span>{metaSize(meta)}</span>
+                    <span>{meta.mime ?? "未知格式"}</span>
+                    <span>{formatTime(meta.created_at)}</span>
+                  </div>
+
+                  <div className="mt-3">
+                    <MetaRow label="模型" value={labelFor(modelOptions, meta.model)} />
+                    <MetaRow label="动作" value={labelFor(actionTabs, meta.action)} />
+                    <MetaRow label="采样器" value={labelFor(samplerOptions, paramTextOrNull(meta.params.sampler))} />
+                    <MetaRow label="噪声调度" value={labelFor(noiseScheduleOptions, paramTextOrNull(meta.params.noise_schedule))} />
+                    <MetaRow label="步数" value={paramText(meta.params, "steps")} />
+                    <MetaRow label="提示词引导" value={paramText(meta.params, "scale")} />
+                    <MetaRow label="种子" value={paramText(meta.params, "seed")} />
+                    <MetaRow label="尺寸" value={metaSize(meta)} />
+                    <MetaRow label="张数" value={meta.n !== null ? String(meta.n) : "—"} />
+                    <MetaRow label="上游" value={meta.upstream_id ?? "—"} />
+                    <MetaRow label="成本" value={meta.cost_gems !== null ? `${meta.cost_gems} Gems` : "—"} />
+                    <MetaRow label="创建时间" value={formatTime(meta.created_at)} />
+                  </div>
+
+                  <PromptBlock label="提示词" value={meta.prompt.positive} onCopy={copyText} />
+                  <PromptBlock label="负面提示词" value={meta.prompt.negative} onCopy={copyText} />
+                </>
+              ) : null}
+            </div>
+
+            <div className="flex shrink-0 items-center justify-between gap-2 border-t border-(--color-border) px-5 py-3">
+              <span className="text-xs text-(--color-success)">{copyNotice ?? ""}</span>
+              <div className="flex items-center gap-2">
+                <Dialog.Close asChild>
+                  <button
+                    type="button"
+                    className="inline-flex h-9 items-center rounded-full border border-(--color-border) px-4 text-sm transition-colors hover:border-(--color-border-strong)"
+                  >
+                    关闭
+                  </button>
+                </Dialog.Close>
+                <button
+                  type="button"
+                  disabled={!meta}
+                  onClick={reproduce}
+                  className="inline-flex h-9 items-center rounded-full bg-(--color-primary) px-4 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  复现
+                </button>
+              </div>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }

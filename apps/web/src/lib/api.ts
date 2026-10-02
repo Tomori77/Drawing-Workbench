@@ -74,6 +74,7 @@ export interface GenerateParams {
     seed: number;
     sampler: string;
     noise_schedule: string;
+    artist?: string;
   };
 }
 
@@ -95,6 +96,31 @@ export interface GalleryItem {
   created_at: string;
   url: string;
   thumb_url: string | null;
+}
+
+export interface GalleryMeta {
+  id: string;
+  generation_id: string | null;
+  owner_sid: string;
+  mime: string | null;
+  width: number | null;
+  height: number | null;
+  size_bytes: number;
+  created_at: string;
+  url: string;
+  thumb_url: string | null;
+  upstream_id: string | null;
+  model: string | null;
+  action: string | null;
+  prompt: { positive: string; negative: string };
+  n: number | null;
+  params: Record<string, unknown>;
+  cost_gems: number | null;
+  role: string | null;
+}
+
+export function getGalleryMeta(id: string): Promise<GalleryMeta> {
+  return apiFetch<GalleryMeta>(`/api/gallery/${encodeURIComponent(id)}/meta`);
 }
 
 export interface GalleryPage {
@@ -184,6 +210,84 @@ export function deleteSharePassword(id: string): Promise<{ ok: boolean }> {
   return apiFetch<{ ok: boolean }>(`/api/share-passwords/${encodeURIComponent(id)}`, {
     method: "DELETE"
   });
+}
+
+export type PresetKind = "recipe" | "artist";
+
+export interface Preset {
+  id: string;
+  owner_sid: string;
+  kind: PresetKind;
+  name: string;
+  content?: string;
+  payload?: Record<string, unknown>;
+  builtin: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PresetListResponse {
+  items: Preset[];
+}
+
+export interface ListPresetsArgs {
+  kind: PresetKind;
+  sid?: string;
+}
+
+export function listPresets({ kind, sid }: ListPresetsArgs): Promise<PresetListResponse> {
+  const params = new URLSearchParams({ kind });
+  if (sid) params.set("sid", sid);
+  return apiFetch<PresetListResponse>(`/api/presets?${params.toString()}`);
+}
+
+export interface CreatePresetInput {
+  kind: PresetKind;
+  name: string;
+  content?: string;
+  payload?: Record<string, unknown>;
+}
+
+export interface UpdatePresetPatch {
+  name?: string;
+  content?: string;
+  payload?: Record<string, unknown>;
+}
+
+export function createPreset(body: CreatePresetInput): Promise<Preset> {
+  return apiFetch<Preset>("/api/presets", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+export function updatePreset(id: string, patch: UpdatePresetPatch): Promise<Preset> {
+  return apiFetch<Preset>(`/api/presets/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch)
+  });
+}
+
+export function deletePreset(id: string): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/presets/${encodeURIComponent(id)}`, {
+    method: "DELETE"
+  });
+}
+
+export interface PresetOverviewItem {
+  sid: string;
+  label: string;
+  role: string;
+  recipe_count: number;
+  artist_count: number;
+}
+
+export interface PresetOverviewResponse {
+  items: PresetOverviewItem[];
+}
+
+export function getPresetsOverview(): Promise<PresetOverviewResponse> {
+  return apiFetch<PresetOverviewResponse>("/api/presets/overview");
 }
 
 export function deleteAsset(id: string): Promise<{ ok: boolean; id: string }> {

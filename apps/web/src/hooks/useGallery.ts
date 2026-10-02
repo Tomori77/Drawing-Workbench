@@ -8,9 +8,11 @@ import {
 import {
   clearGallery,
   deleteAsset,
+  getGalleryMeta,
   getGalleryOverview,
   listGallery,
   uploadThumb,
+  type GalleryMeta,
   type GalleryOverviewResponse,
   type GalleryPage
 } from "../lib/api";
@@ -38,6 +40,15 @@ export function useGalleryOverview(enabled = true) {
     queryFn: () => getGalleryOverview(),
     staleTime: 30_000,
     enabled
+  });
+}
+
+export function useGalleryMeta(id: string | null) {
+  return useQuery<GalleryMeta>({
+    queryKey: [...GALLERY_QUERY_KEY, "meta", id ?? ""],
+    queryFn: () => getGalleryMeta(id as string),
+    staleTime: 30_000,
+    enabled: !!id
   });
 }
 

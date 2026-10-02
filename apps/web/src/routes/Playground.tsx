@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import * as Tabs from "@radix-ui/react-tabs";
 import * as Slider from "@radix-ui/react-slider";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
@@ -9,7 +10,14 @@ import Lightbox from "../components/Lightbox";
 import { IconClose, IconPlus, IconSliders, IconSpark } from "../components/icons";
 import { useGenerate } from "../hooks/useGenerate";
 import { useGallery } from "../hooks/useGallery";
-import type { GenerateImage, GenerateParams } from "../lib/api";
+import {
+  useCreatePreset,
+  useDeletePreset,
+  usePresets,
+  useUpdatePreset
+} from "../hooks/usePresets";
+import type { GalleryMeta, GenerateImage, GenerateParams, Preset } from "../lib/api";
+import { DialogActions, DialogShell, inputClass } from "../components/console-ui";
 import {
   actionTabs,
   canvasSizes,
@@ -89,7 +97,314 @@ function PanelSection({ title, meta, children }: { title: string; meta?: string;
 
 type PromptTab = "positive" | "negative";
 
+interface ReproduceState {
+  reproduce?: GalleryMeta;
+}
+
+function asParamString(value: unknown, fallback: string): string {
+  if (value === undefined || value === null || value === "") return fallback;
+  return String(value);
+}
+
+function asParamNumber(value: unknown, fallback: number): number {
+  if (value === undefined || value === null || value === "") return fallback;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+type UpdatePresetMutation = ReturnType<typeof useUpdatePreset>;
+type DeletePresetMutation = ReturnType<typeof useDeletePreset>;
+type CreatePresetMutation = ReturnType<typeof useCreatePreset>;
+
+function RecipeManagerDialog({
+  open,
+  onOpenChange,
+  recipes,
+  currentPayload,
+  onApply,
+  updateMutation,
+  deleteMutation
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  recipes: Preset[];
+  currentPayload: () => GenerateParams;
+  onApply: (preset: Preset) => void;
+  updateMutation: UpdatePresetMutation;
+  deleteMutation: DeletePresetMutation;
+}) {
+  const [renameId, setRenameId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  const close = (next: boolean) => {
+    onOpenChange(next);
+    if (!next) {
+      setRenameId(null);
+      setRenameValue("");
+      updateMutation.reset();
+    }
+  };
+
+  return (
+    <DialogShell
+      open={open}
+      onOpenChange={close}
+      title="管理配方"
+      description="应用、用当前参数覆盖、改名或删除。"
+    >
+      {recipes.length === 0 ? (
+        <p className="py-6 text-center text-sm text-(--color-muted)">还没有配方。</p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {recipes.map((item) => (
+            <li key={item.id} className="rounded-(--radius-input) border border-(--color-border) p-2.5">
+              {renameId === item.id ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    className={inputClass}
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    disabled={!renameValue.trim()}
+                    onClick={() =>
+                      updateMutation.mutate(
+                        { id: item.id, patch: { name: renameValue.trim() } },
+                        { onSuccess: () => setRenameId(null) }
+                      )
+                    }
+                    className="h-9 shrink-0 rounded-full bg-(--color-primary) px-3 text-sm text-white disabled:opacity-50"
+                  >
+                    保存
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="text-sm font-medium">{item.name}</div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onApply(item)}
+                      className="rounded-full border border-(--color-border) px-3 py-1 text-xs text-(--color-muted) hover:border-(--color-border-strong) hover:text-(--color-text)"
+                    >
+                      应用
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateMutation.mutate({ id: item.id, patch: { payload: currentPayload() as unknown as Record<string, unknown> } })
+                      }
+                      className="rounded-full border border-(--color-border) px-3 py-1 text-xs text-(--color-muted) hover:border-(--color-border-strong) hover:text-(--color-text)"
+                    >
+                      覆盖
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRenameId(item.id);
+                        setRenameValue(item.name);
+                      }}
+                      className="rounded-full border border-(--color-border) px-3 py-1 text-xs text-(--color-muted) hover:border-(--color-border-strong) hover:text-(--color-text)"
+                    >
+                      改名
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteMutation.mutate(item.id)}
+                      className="rounded-full border border-(--color-border) px-3 py-1 text-xs text-(--color-muted) hover:border-(--color-warning)/50 hover:text-(--color-warning)"
+                    >
+                      删除
+                    </button>
+                  </div>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {updateMutation.isError && (
+        <p className="mt-3 text-sm text-(--color-warning)">操作失败：{updateMutation.error.message}</p>
+      )}
+      {deleteMutation.isError && (
+        <p className="mt-3 text-sm text-(--color-warning)">删除失败：{deleteMutation.error.message}</p>
+      )}
+      <DialogActions pending={updateMutation.isPending || deleteMutation.isPending} confirmLabel="完成" onCancel={() => close(false)} onConfirm={() => close(false)} />
+    </DialogShell>
+  );
+}
+
+function ArtistManagerDialog({
+  open,
+  onOpenChange,
+  artists,
+  onApply,
+  updateMutation,
+  deleteMutation,
+  createMutation,
+  onExtract
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  artists: Preset[];
+  onApply: (content: string) => void;
+  updateMutation: UpdatePresetMutation;
+  deleteMutation: DeletePresetMutation;
+  createMutation: CreatePresetMutation;
+  onExtract: () => void;
+}) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [formName, setFormName] = useState("");
+  const [formContent, setFormContent] = useState("");
+
+  const close = (next: boolean) => {
+    onOpenChange(next);
+    if (!next) {
+      setEditingId(null);
+      updateMutation.reset();
+      createMutation.reset();
+    }
+  };
+
+  const startEdit = (item: Preset) => {
+    setEditingId(item.id);
+    setFormName(item.name);
+    setFormContent(item.content ?? "");
+  };
+  const startNew = () => {
+    setEditingId("new");
+    setFormName("");
+    setFormContent("");
+  };
+  const save = () => {
+    const name = formName.trim();
+    if (!name) return;
+    if (editingId === "new") {
+      createMutation.mutate(
+        { kind: "artist", name, content: formContent },
+        { onSuccess: () => setEditingId(null) }
+      );
+    } else if (editingId) {
+      updateMutation.mutate(
+        { id: editingId, patch: { name, content: formContent } },
+        { onSuccess: () => setEditingId(null) }
+      );
+    }
+  };
+
+  const formOpen = editingId !== null;
+
+  return (
+    <DialogShell
+      open={open}
+      onOpenChange={close}
+      title="管理画师串"
+      description="画师串会在提交时拼接到正向提示词最前面（不改动输入框内容）。"
+    >
+      {formOpen ? (
+        <div className="flex flex-col gap-3">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-(--color-muted)">名称</span>
+            <input className={inputClass} value={formName} onChange={(e) => setFormName(e.target.value)} autoFocus />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-(--color-muted)">内容</span>
+            <textarea
+              className="min-h-28 w-full resize-y rounded-(--radius-input) border border-(--color-border) bg-(--color-surface-1) px-3 py-2 text-sm outline-none focus:border-(--color-primary)"
+              value={formContent}
+              onChange={(e) => setFormContent(e.target.value)}
+            />
+          </label>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setEditingId(null)}
+              className="h-9 rounded-full border border-(--color-border) px-4 text-sm hover:border-(--color-border-strong)"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              disabled={!formName.trim() || createMutation.isPending || updateMutation.isPending}
+              onClick={save}
+              className="h-9 rounded-full bg-(--color-primary) px-4 text-sm font-medium text-white disabled:opacity-50"
+            >
+              保存
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <ul className="flex max-h-72 flex-col gap-2 overflow-y-auto">
+            {artists.map((item) => (
+              <li key={item.id} className="rounded-(--radius-input) border border-(--color-border) p-2.5">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <span>{item.name}</span>
+                  {item.builtin && (
+                    <span className="rounded-full border border-(--color-border) px-2 py-0.5 text-[10px] text-(--color-muted-2)">
+                      内置
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1 max-h-12 overflow-y-auto text-[11px] leading-relaxed break-words whitespace-pre-wrap text-(--color-muted-2)">
+                  {item.content}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onApply(item.content ?? "")}
+                    className="rounded-full border border-(--color-border) px-3 py-1 text-xs text-(--color-muted) hover:border-(--color-border-strong) hover:text-(--color-text)"
+                  >
+                    应用
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => startEdit(item)}
+                    className="rounded-full border border-(--color-border) px-3 py-1 text-xs text-(--color-muted) hover:border-(--color-border-strong) hover:text-(--color-text)"
+                  >
+                    编辑
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => deleteMutation.mutate(item.id)}
+                    className="rounded-full border border-(--color-border) px-3 py-1 text-xs text-(--color-muted) hover:border-(--color-warning)/50 hover:text-(--color-warning)"
+                  >
+                    删除
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={startNew}
+              className="rounded-full border border-(--color-border) px-3 py-1.5 text-xs text-(--color-muted) hover:border-(--color-border-strong) hover:text-(--color-text)"
+            >
+              新增
+            </button>
+            <button
+              type="button"
+              onClick={onExtract}
+              className="rounded-full border border-(--color-border) px-3 py-1.5 text-xs text-(--color-muted) hover:border-(--color-border-strong) hover:text-(--color-text)"
+            >
+              从当前提示词提炼
+            </button>
+          </div>
+        </>
+      )}
+      {deleteMutation.isError && (
+        <p className="mt-3 text-sm text-(--color-warning)">删除失败：{deleteMutation.error.message}</p>
+      )}
+      <DialogActions pending={deleteMutation.isPending} confirmLabel="完成" onCancel={() => close(false)} onConfirm={() => close(false)} />
+    </DialogShell>
+  );
+}
+
 export default function Playground() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [model, setModel] = useState(modelOptions[0].value);
   const [action, setAction] = useState(actionTabs[0].value);
   const [sizeIndex, setSizeIndex] = useState(0);
@@ -105,7 +420,30 @@ export default function Playground() {
   const [lightbox, setLightbox] = useState<GenerateImage | null>(null);
   const [mobileParamsOpen, setMobileParamsOpen] = useState(false);
 
-  const canvas = canvasSizes[sizeIndex];
+  const [artistContent, setArtistContent] = useState("");
+
+  const recipeQuery = usePresets("recipe");
+  const artistQuery = usePresets("artist");
+  const recipes = recipeQuery.data?.items ?? [];
+  const artists = artistQuery.data?.items ?? [];
+
+  const [recipeSelect, setRecipeSelect] = useState("");
+  const [artistSelect, setArtistSelect] = useState("");
+  const [recipeDialogOpen, setRecipeDialogOpen] = useState(false);
+  const [artistDialogOpen, setArtistDialogOpen] = useState(false);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [saveName, setSaveName] = useState("");
+  const createPreset = useCreatePreset("recipe");
+  const updateRecipe = useUpdatePreset("recipe");
+  const deleteRecipe = useDeletePreset("recipe");
+  const updateArtist = useUpdatePreset("artist");
+  const deleteArtist = useDeletePreset("artist");
+  const createArtist = useCreatePreset("artist");
+
+  const preset = canvasSizes[sizeIndex];
+  const [customSize, setCustomSize] = useState<{ width: number; height: number } | null>(null);
+  const canvas = customSize ?? preset;
+  const canvasRatio = customSize ? `${customSize.width}×${customSize.height}` : preset.ratio;
   const generateMutation = useGenerate();
   const galleryQuery = useGallery();
   const historyItems = useMemo(
@@ -116,11 +454,79 @@ export default function Playground() {
   const positiveTokens = Math.ceil(prompt.length / 4);
   const negativeTokens = Math.ceil(negative.length / 4);
 
+  // 当前全部参数快照，供「存为 / 覆盖配方」使用。
+  const snapshotParams = (): GenerateParams => ({
+    model,
+    prompt,
+    negative_prompt: negative,
+    action,
+    n: 1,
+    size: `${canvas.width}x${canvas.height}`,
+    parameters: {
+      width: canvas.width,
+      height: canvas.height,
+      steps,
+      scale: guidance,
+      seed: Number.parseInt(seed, 10) || 0,
+      sampler,
+      noise_schedule: schedule
+    }
+  });
+
+  // 把配方快照灌回全部 state。
+  const applyRecipe = (preset: Preset) => {
+    const p = preset.payload as Partial<GenerateParams> | undefined;
+    if (!p) return;
+    if (p.model) setModel(p.model);
+    if (p.action) setAction(p.action);
+    if (typeof p.prompt === "string") setPrompt(p.prompt);
+    if (typeof p.negative_prompt === "string") setNegative(p.negative_prompt);
+    const params: Partial<GenerateParams["parameters"]> = p.parameters ?? {};
+    if (params.sampler) setSampler(params.sampler);
+    if (params.noise_schedule) setSchedule(params.noise_schedule);
+    if (params.steps !== undefined) setSteps(Math.round(asParamNumber(params.steps, 28)));
+    if (params.scale !== undefined) setGuidance(asParamNumber(params.scale, 5));
+    if (params.seed !== undefined) setSeed(String(params.seed));
+    const width = asParamNumber(params.width, NaN);
+    const height = asParamNumber(params.height, NaN);
+    if (Number.isFinite(width) && Number.isFinite(height)) {
+      const presetIndex = canvasSizes.findIndex((s) => s.width === width && s.height === height);
+      if (presetIndex >= 0) {
+        setCustomSize(null);
+        setSizeIndex(presetIndex);
+      } else {
+        setCustomSize({ width, height });
+      }
+    }
+  };
+
+  const saveRecipe = () => {
+    const name = saveName.trim();
+    if (!name) return;
+    createPreset.mutate(
+      { kind: "recipe", name, payload: snapshotParams() as unknown as Record<string, unknown> },
+      {
+        onSuccess: (created) => {
+          setRecipeSelect(created.id);
+          setSaveDialogOpen(false);
+          setSaveName("");
+        }
+      }
+    );
+  };
+
+  const extractArtist = () => {
+    const match = prompt.match(/^\s*((?:\[{0,3}artist:[^\]]+\]{0,3})(?:\s*,\s*(?:\[{0,3}artist:[^\]]+\]{0,3}))*[,]?)/i);
+    const found = match?.[1]?.replace(/,\s*$/, "").trim();
+    if (found) setArtistContent(found);
+  };
+
   const submit = () => {
     if (generateMutation.isPending) return;
+    const positive = artistContent ? `${artistContent}, ${prompt}` : prompt;
     const body: GenerateParams = {
       model,
-      prompt,
+      prompt: positive,
       negative_prompt: negative,
       action,
       n: 1,
@@ -132,7 +538,8 @@ export default function Playground() {
         scale: guidance,
         seed: Number.parseInt(seed, 10) || 0,
         sampler,
-        noise_schedule: schedule
+        noise_schedule: schedule,
+        ...(artistContent ? { artist: artistContent } : {})
       }
     };
     generateMutation.mutate(body, {
@@ -141,6 +548,58 @@ export default function Playground() {
       }
     });
   };
+
+  // 从画廊「复现」：预填参数并清掉 location.state，避免刷新重复填入。
+  const reproducedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const incoming = (location.state as ReproduceState | null)?.reproduce;
+    if (!incoming) {
+      reproducedRef.current = null;
+      return;
+    }
+    if (reproducedRef.current === incoming.id) return;
+    reproducedRef.current = incoming.id;
+
+    const params = incoming.params ?? {};
+    if (incoming.model) setModel(incoming.model);
+    if (incoming.action) setAction(incoming.action);
+    const incomingArtist = asParamString(params.artist, "");
+    if (incomingArtist) {
+      setArtistContent(incomingArtist);
+      const prefix = `${incomingArtist}, `;
+      setPrompt(
+        incoming.prompt.positive.startsWith(prefix)
+          ? incoming.prompt.positive.slice(prefix.length)
+          : incoming.prompt.positive
+      );
+    } else {
+      setArtistContent("");
+      if (incoming.prompt.positive) setPrompt(incoming.prompt.positive);
+    }
+    if (incoming.prompt.negative) setNegative(incoming.prompt.negative);
+
+    const incomingSampler = asParamString(params.sampler, "");
+    if (incomingSampler) setSampler(incomingSampler);
+    const incomingSchedule = asParamString(params.noise_schedule, "");
+    if (incomingSchedule) setSchedule(incomingSchedule);
+    if (params.steps !== undefined && params.steps !== null) setSteps(Math.round(asParamNumber(params.steps, 28)));
+    if (params.scale !== undefined && params.scale !== null) setGuidance(asParamNumber(params.scale, 5));
+    if (params.seed !== undefined && params.seed !== null) setSeed(String(params.seed));
+
+    const width = asParamNumber(incoming.width ?? params.width, NaN);
+    const height = asParamNumber(incoming.height ?? params.height, NaN);
+    if (Number.isFinite(width) && Number.isFinite(height)) {
+      const presetIndex = canvasSizes.findIndex((s) => s.width === width && s.height === height);
+      if (presetIndex >= 0) {
+        setCustomSize(null);
+        setSizeIndex(presetIndex);
+      } else {
+        setCustomSize({ width, height });
+      }
+    }
+
+    navigate(".", { replace: true, state: null });
+  }, [location.state, navigate]);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -161,6 +620,102 @@ export default function Playground() {
 
   const renderParamsBody = () => (
     <div className="flex-1 overflow-y-auto">
+      <PanelSection title="配方" meta="参数快照">
+        <Field label="配方">
+          <select
+            className={inputClass}
+            value={recipeSelect}
+            onChange={(e) => setRecipeSelect(e.target.value)}
+          >
+            <option value="">选择配方…</option>
+            {recipes.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={!recipeSelect}
+            onClick={() => {
+              const found = recipes.find((item) => item.id === recipeSelect);
+              if (found) applyRecipe(found);
+            }}
+            className="h-8 rounded-full border border-(--color-border) px-3 text-xs text-(--color-muted) transition-colors hover:border-(--color-border-strong) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            应用
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSaveName("");
+              setSaveDialogOpen(true);
+            }}
+            className="h-8 rounded-full border border-(--color-border) px-3 text-xs text-(--color-muted) transition-colors hover:border-(--color-border-strong) hover:text-(--color-text)"
+          >
+            存为配方
+          </button>
+          <button
+            type="button"
+            onClick={() => setRecipeDialogOpen(true)}
+            className="h-8 rounded-full border border-(--color-border) px-3 text-xs text-(--color-muted) transition-colors hover:border-(--color-border-strong) hover:text-(--color-text)"
+          >
+            管理
+          </button>
+        </div>
+      </PanelSection>
+
+      <PanelSection title="画师串" meta={artistContent ? "已启用" : undefined}>
+        <Field label="画师串">
+          <select
+            className={inputClass}
+            value={artistSelect}
+            onChange={(e) => setArtistSelect(e.target.value)}
+          >
+            <option value="">选择画师串…</option>
+            {artists.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+                {item.builtin ? "（内置）" : ""}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <p className="max-h-16 overflow-y-auto rounded-(--radius-input) bg-(--color-surface-2) px-2.5 py-1.5 text-[11px] leading-relaxed break-words whitespace-pre-wrap text-(--color-muted)">
+          {artistContent || "未启用画师串"}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={!artistSelect}
+            onClick={() => {
+              const found = artists.find((item) => item.id === artistSelect);
+              if (found) setArtistContent(found.content ?? "");
+            }}
+            className="h-8 rounded-full border border-(--color-border) px-3 text-xs text-(--color-muted) transition-colors hover:border-(--color-border-strong) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            应用
+          </button>
+          <button
+            type="button"
+            disabled={!artistContent}
+            onClick={() => setArtistContent("")}
+            className="h-8 rounded-full border border-(--color-border) px-3 text-xs text-(--color-muted) transition-colors hover:border-(--color-border-strong) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            清空
+          </button>
+          <button
+            type="button"
+            onClick={() => setArtistDialogOpen(true)}
+            className="h-8 rounded-full border border-(--color-border) px-3 text-xs text-(--color-muted) transition-colors hover:border-(--color-border-strong) hover:text-(--color-text)"
+          >
+            管理
+          </button>
+        </div>
+      </PanelSection>
+
       <PanelSection title="模型">
         <Field label="模型">
           <SelectMenu ariaLabel="模型" value={model} options={modelOptions} onChange={setModel} />
@@ -180,16 +735,19 @@ export default function Playground() {
         </Tabs.Root>
       </PanelSection>
 
-      <PanelSection title="画布" meta={canvas.ratio}>
+      <PanelSection title="画布" meta={canvasRatio}>
         <div className="grid grid-cols-2 gap-2">
           {canvasSizes.map((option, index) => {
-            const active = index === sizeIndex;
+            const active = !customSize && index === sizeIndex;
             return (
               <button
                 key={option.ratio}
                 type="button"
                 aria-pressed={active}
-                onClick={() => setSizeIndex(index)}
+                onClick={() => {
+                  setCustomSize(null);
+                  setSizeIndex(index);
+                }}
                 className={`flex h-12 flex-col items-center justify-center rounded-(--radius-input) border text-xs transition-colors ${
                   active
                     ? "border-(--color-text) bg-(--color-surface-2) font-medium"
@@ -202,6 +760,11 @@ export default function Playground() {
             );
           })}
         </div>
+        {customSize && (
+          <p className="rounded-(--radius-input) border border-(--color-text) bg-(--color-surface-2) px-3 py-2 text-xs text-(--color-muted)">
+            自定义尺寸 {customSize.width}×{customSize.height}
+          </p>
+        )}
       </PanelSection>
 
       <PanelSection title="采样">
@@ -364,6 +927,16 @@ export default function Playground() {
               </div>
 
               <Tabs.Content value="positive" className="px-4 pt-3 outline-none">
+                <div className="mb-2 flex justify-end">
+                  <button
+                    type="button"
+                    disabled
+                    title="即将支持"
+                    className="cursor-not-allowed rounded-full border border-(--color-border) px-2.5 py-0.5 text-[11px] text-(--color-muted-2) opacity-60"
+                  >
+                    中文转 NAI 提示词
+                  </button>
+                </div>
                 <textarea
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
@@ -390,7 +963,7 @@ export default function Playground() {
                   <span className="truncate">费用 — Gems · 单次请求 × 1</span>
                 </p>
                 <p className="mt-1 text-[11px] text-(--color-muted-2)">
-                  {prompt.length + negative.length} 字符 · {canvas.ratio}
+                  {prompt.length + negative.length} 字符 · {canvasRatio}
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
@@ -466,6 +1039,61 @@ export default function Playground() {
           )}
         </aside>
       </div>
+
+      <DialogShell
+        open={saveDialogOpen}
+        onOpenChange={(open) => {
+          setSaveDialogOpen(open);
+          if (!open) createPreset.reset();
+        }}
+        title="存为配方"
+        description="把当前全部参数保存为一套可复用的配方。"
+      >
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-(--color-muted)">配方名称</span>
+          <input
+            className={inputClass}
+            value={saveName}
+            onChange={(e) => setSaveName(e.target.value)}
+            placeholder="例如：韩漫小清新"
+            autoFocus
+          />
+        </label>
+        {createPreset.isError && (
+          <p className="mt-3 text-sm text-(--color-warning)">保存失败：{createPreset.error.message}</p>
+        )}
+        <DialogActions
+          pending={createPreset.isPending}
+          disabled={!saveName.trim()}
+          confirmLabel="保存"
+          onCancel={() => {
+            createPreset.reset();
+            setSaveDialogOpen(false);
+          }}
+          onConfirm={saveRecipe}
+        />
+      </DialogShell>
+
+      <RecipeManagerDialog
+        open={recipeDialogOpen}
+        onOpenChange={setRecipeDialogOpen}
+        recipes={recipes}
+        currentPayload={snapshotParams}
+        onApply={applyRecipe}
+        updateMutation={updateRecipe}
+        deleteMutation={deleteRecipe}
+      />
+
+      <ArtistManagerDialog
+        open={artistDialogOpen}
+        onOpenChange={setArtistDialogOpen}
+        artists={artists}
+        onApply={(content) => setArtistContent(content)}
+        updateMutation={updateArtist}
+        deleteMutation={deleteArtist}
+        createMutation={createArtist}
+        onExtract={extractArtist}
+      />
 
       <Dialog.Root open={mobileParamsOpen} onOpenChange={setMobileParamsOpen}>
         <Dialog.Portal>

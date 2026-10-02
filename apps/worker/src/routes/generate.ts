@@ -137,7 +137,8 @@ export async function persistGeneration(
       role,
       result.upstream_id ?? null,
       result.account_id ?? null,
-      JSON.stringify(canonical.params),
+      // 存完整 canonical（model/action/prompt/params/references/n），供画廊「复现」还原全部参数。
+      JSON.stringify(canonical),
       result.ok ? "success" : "failed",
       result.cost_gems ?? 0,
       created,
