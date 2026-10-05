@@ -55,7 +55,7 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 export interface GenerateImage {
   id: string;
   url: string;
-  thumb_url?: string;
+  thumb_url?: string | null;
   width?: number;
   height?: number;
 }

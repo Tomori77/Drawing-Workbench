@@ -12,6 +12,7 @@ import {
   useGalleryOverview,
   useSetAssetPublic
 } from "../hooks/useGallery";
+import { useThumbnailBackfill } from "../hooks/useThumbnailBackfill";
 import type { GalleryItem, GalleryMeta } from "../lib/api";
 import { actionTabs, gallerySorts, modelOptions, noiseScheduleOptions, samplerOptions } from "../lib/mock";
 import { IconClose, IconLogo, IconSearch } from "../components/icons";
@@ -135,6 +136,8 @@ export default function Gallery() {
   };
 
   const items = (activeQuery.data?.pages ?? []).flatMap((page) => page.items);
+  // 「我的作品」才回填缩略图；公开区含他人图片，上传接口会因归属校验 404。
+  useThumbnailBackfill(items, tab === "mine");
   const total = activeQuery.data?.pages[0]?.total ?? 0;
   const overview = overviewQuery.data?.items ?? [];
   const clearingSid = sidFilter === "all" ? undefined : sidFilter;

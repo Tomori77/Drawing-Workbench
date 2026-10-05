@@ -320,6 +320,11 @@ gallery.post("/:id/thumb", requireOrigin, async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM assets WHERE id=?").bind(id).first<AssetRow>();
   if (!row || !canManage(c, row)) return c.json({ error: "not_found" }, 404);
 
+  // 幂等：已有缩略图时默认直接返回成功，不重复上传、不重复累加 size_bytes（除非 ?force=1）。
+  if (row.thumb_r2_key && c.req.query("force") !== "1") {
+    return c.json({ ok: true, id, thumb_url: assetUrl(id, true) });
+  }
+
   const contentType = c.req.header("Content-Type") ?? "";
   let bytes: Uint8Array | null = null;
   let mime = "image/webp";

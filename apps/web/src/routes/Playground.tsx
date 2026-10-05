@@ -10,6 +10,7 @@ import Lightbox from "../components/Lightbox";
 import { IconClose, IconPlus, IconSliders, IconSpark } from "../components/icons";
 import { useGenerate } from "../hooks/useGenerate";
 import { useGallery } from "../hooks/useGallery";
+import { useThumbnailBackfill } from "../hooks/useThumbnailBackfill";
 import {
   useCreatePreset,
   useDeletePreset,
@@ -593,6 +594,16 @@ export default function Playground() {
   const historyItems = useMemo(
     () => (galleryQuery.data?.pages ?? []).flatMap((page) => page.items).slice(0, 24),
     [galleryQuery.data]
+  );
+
+  // 本次生成的作品同样回填缩略图（属于自己，直接上传）。
+  useThumbnailBackfill(
+    sessionImages.map((image) => ({
+      id: image.id,
+      url: image.url,
+      thumb_url: image.thumb_url ?? null
+    })),
+    true
   );
 
   const positiveTokens = Math.ceil(prompt.length / 4);

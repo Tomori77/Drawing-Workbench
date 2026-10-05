@@ -259,7 +259,8 @@ generate.post("/", requireOrigin, async (c) => {
     images: persisted.images.map((image) => ({
       id: image.id,
       url: `/api/gallery/i/${image.id}`,
-      thumb_url: `/api/gallery/i/${image.id}?t=thumb`
+      // 此刻尚未生成缩略图（由浏览器 canvas 异步上传），返回 null 避免前端引用 404 地址。
+      thumb_url: null
     }))
   });
 });
